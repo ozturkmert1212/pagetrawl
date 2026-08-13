@@ -752,10 +752,105 @@ $('#size').addEventListener('input', (e) => {
 
 $('#size').addEventListener('change', (e) => saveSetting({ tileSize: +e.target.value }));
 
-// Ayarlar artık popup'ın içinde değil, ayrı bir sekmede. Sebebi: klasör
-// penceresi odağı alınca Chrome popup'ı kapatıyor ve kullanıcı seçiminin
-// sonucunu göremiyordu. Sekme odak kaybında kapanmıyor.
-$('#gear').addEventListener('click', () => chrome.runtime.openOptionsPage());
+// --- ayarlar ekranı --------------------------------------------------------
+// Popup'ın üstüne sağdan kayan tam ekran katman. Klasör yolunu ancak ekran
+// açılırken soruyoruz: mutlak yol henüz bilinmiyorsa arka plan sessiz bir sonda
+// indirmesi yapıyor, bunu her popup açılışında yaptırmak gereksiz sürpriz olur.
+
+function openSettings() {
+  $('#settingsView').classList.add('open');
+  showFolder();
+}
+
+function closeSettings() {
+  $('#settingsView').classList.remove('open');
+  $('#saved').textContent = '';
+}
+
+$('#gear').addEventListener('click', () => {
+  if ($('#settingsView').classList.contains('open')) closeSettings();
+  else openSettings();
+});
+
+$('#settingsBack').addEventListener('click', closeSettings);
+
+// Ekran açıkken Esc geri döndürsün; kullanıcı popup'ı kapatmak zorunda kalmasın.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('#settingsView').classList.contains('open')) {
+    e.preventDefault();
+    closeSettings();
+  }
+});
+
+// --- kayıt klasörü ---------------------------------------------------------
+
+// Fotoğraf ve videolar için TEK klasör. Kutuda tam yol duruyor; İndirilenler'in
+// mutlak yolunu API vermediği için arka plan onu bir kez sonda indirmesiyle
+// öğreniyor, biz hazır değeri istiyoruz.
+async function showFolder() {
+  const info = await chrome.runtime.sendMessage({ type: 'getFolderInfo' });
+  const box = $('#folder');
+  box.value = info?.set ? info.abs : '';
+  box.placeholder = info?.root || t('folder.rootPh');
+
+  // Bir önceki "Gözat" denemesinin sonucu varsa onu göster: klasör penceresi
+  // popup'ı kapattığı için o an gösterilememişti.
+  setFolderNote(info?.folderMsg || defaultNote(info), !!info?.folderMsg && !info?.set);
+}
+
+function defaultNote(info) {
+  if (!info?.set) return t('folder.note.unset');
+  if (!info.outside) return t('folder.note.inside');
+  return t('folder.note.outside', { stage: info.stage || 'pagetrawl-gecici' });
+}
+
+function setFolderNote(text, bad = false) {
+  $('#folderNote').textContent = text;
+  $('#folderNote').classList.toggle('err', bad);
+}
+
+// Klasörü seçtiren pencereyi köprü açıyor: Chrome'un kendi Kaydet penceresi
+// yalnızca İndirilenler altını kabul ediyordu, köprününki her yeri seçebiliyor.
+// Pencere odağı alınca Chrome popup'ı kapatıyor — engellenemiyor, o yüzden
+// önce uyarıyoruz; sonuç storage'a yazılıp bir dahaki açılışta gösteriliyor.
+$('#browse').addEventListener('click', () => {
+  setFolderNote(t('folder.opening'));
+  chrome.runtime.sendMessage({ type: 'pickFolder' });
+});
+
+$('#folderReset').addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'setFolder', path: '' });
+});
+
+// Elle yazılan/yapıştırılan yol: köprü sadece doğruluyor, klasörü indirme
+// anında açıyor — yanlış yazılmış bir yol diske çöp klasör bırakmasın.
+$('#folder').addEventListener('change', (e) => {
+  const path = e.target.value.trim();
+  setFolderNote(path ? t('folder.checking') : '');
+  chrome.runtime.sendMessage({ type: 'setFolder', path });
+});
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type !== 'folder') return;
+
+  if (msg.note) setFolderNote(msg.note, !!msg.bad);          // ör. taşıma hatası
+  else if (msg.error) setFolderNote(msg.error, true);
+  else if (msg.canceled) setFolderNote(t('folder.canceled'));
+  else if (msg.path) { $('#folder').value = msg.path; showFolder(); }
+  else { $('#folder').value = ''; showFolder(); }
+});
+
+$('#saveSettings').addEventListener('click', async () => {
+  await saveSetting({
+    maxConcurrent: Math.min(10, Math.max(1, +$('#maxConcurrent').value || 4)),
+    template: $('#template').value.trim() || '{host}/{name}.{ext}',
+    saveAs: $('#saveAs').checked
+  });
+
+  const note = $('#saved');
+  note.textContent = t('opt.saved');
+  setTimeout(() => (note.textContent = ''), 1600);
+});
 
 // --- toplu indirme ilerlemesi ----------------------------------------------
 // Kuyruk service worker'da işliyor; popup kapansa da sürüyor. Bu yüzden durumu
@@ -1118,6 +1213,7 @@ function applyLang(lang) {
   showNotice();
   renderDl(lastProg);
   if (lastYtStatus) renderYtStatus(lastYtStatus);
+  if ($('#settingsView').classList.contains('open')) showFolder();   // klasör notu da çeviriyle üretiliyor
   if (tab) initYt();                 // video kartındaki yedek başlık
 }
 
@@ -1141,6 +1237,10 @@ $('#langs').addEventListener('click', (e) => {
     .forEach((b) => b.classList.toggle('on', b.dataset.lang === getLang()));
   applyStaticI18n();
 
+  $('#maxConcurrent').value = settings?.maxConcurrent ?? 4;
+  $('#template').value = settings?.template ?? '{host}/{name}.{ext}';
+  $('#saveAs').checked = !!settings?.saveAs;
+
   // Eski sürümden 100 gibi çok küçük bir değer kalmış olabilir; alt sınıra çek.
   const tile = Math.min(340, Math.max(140, settings?.tileSize ?? 200));
   $('#size').value = tile;
@@ -1154,6 +1254,11 @@ $('#langs').addEventListener('click', (e) => {
   $('#minWidth').value = settings?.minWidth ?? 0;
 
   renderDl(await chrome.runtime.sendMessage({ type: 'getProg' }));
+
+  // Önceki "Gözat" denemesi bir sonuç bıraktıysa (klasör penceresi popup'ı
+  // kapattığı için gösterilememişti) ayarlar ekranını kendiliğinden aç.
+  const { folderMsg } = await chrome.storage.session.get('folderMsg');
+  if (folderMsg) openSettings();
 
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 

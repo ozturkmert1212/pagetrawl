@@ -60,7 +60,8 @@ const I18N = {
       'Fotoğraflar ve videolar buraya iner. Burası İndirilenler dışında olduğu için ' +
       'fotoğrafları köprü taşıyor — köprü kurulu değilse İndirilenler\\{stage} altında kalırlar.',
     'folder.checking': 'Klasör doğrulanıyor…',
-    'opt.heading': 'PageTrawl ayarları',
+    'folder.opening': 'Klasör penceresi açılıyor… Popup kapanacak, bu normal — seçtiğin klasör kaydedilir ve buraya döndüğünde görünür.',
+    'settings.back': 'Geri',
     'opt.saved': 'Kaydedildi.',
     'settings.template': 'Dosya adı şablonu',
     'settings.templateHint':
@@ -162,7 +163,8 @@ const I18N = {
       'Images and videos land here. Since this is outside Downloads, images are moved ' +
       'by the bridge — without the bridge installed they stay under Downloads\\{stage}.',
     'folder.checking': 'Validating folder…',
-    'opt.heading': 'PageTrawl settings',
+    'folder.opening': 'Opening the folder window… The popup will close, which is normal — your choice is saved and shown when you come back.',
+    'settings.back': 'Back',
     'opt.saved': 'Saved.',
     'settings.template': 'Filename template',
     'settings.templateHint':

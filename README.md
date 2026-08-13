@@ -56,13 +56,17 @@ Files are saved as `Downloads/{site-name}/{file-name}.{ext}`.
 
 ### Settings
 
-⚙ opens the **settings page in a tab** (`options.html`), not a panel inside the
-popup. That is deliberate: the folder picker window takes focus, and Chrome
-closes a popup the moment it loses focus — so the result of your choice was
-invisible until you reopened the extension. A tab survives.
+⚙ slides a **full settings screen** over the popup — like opening a new tab,
+except it stays inside the popup. Back arrow or Esc returns to the grid.
 
-The page holds the save folder, the concurrency limit, the filename template and
-the "ask where to save" toggle. Language is switched from the popup's flags.
+It holds the save folder, the concurrency limit, the filename template and the
+"ask where to save" toggle. Language is switched from the popup's flags.
+
+> The folder picker window still takes focus, and Chrome closes a popup the
+> moment it loses focus, so the popup disappears while you pick. The result is
+> written to `chrome.storage.session`: reopen the extension and the settings
+> screen opens by itself showing what happened. Nothing is lost, you just don't
+> see it instantly.
 
 #### Filename template
 
@@ -113,12 +117,12 @@ shows a red warning — they never disappear silently.
 
 Details:
 
-- **The folder window no longer costs you the result.** Chrome closes a popup
-  that loses focus and that can't be prevented, which is why settings moved to a
-  tab — it stays open and receives the answer live. The result is still written
-  to `chrome.storage.session` as a fallback. A keepAlive runs for the duration of
-  `dirPending` so the worker doesn't die while the window is open; otherwise a
-  selection you took minutes over would vanish silently.
+- **The popup closes when the folder window opens.** Chrome closes a popup that
+  loses focus, and that can't be prevented. The result is written to
+  `chrome.storage.session`; next time you open the extension the settings screen
+  opens by itself and reports "Save folder updated." A keepAlive runs for the
+  duration of `dirPending` so the worker doesn't die while the window is open —
+  otherwise a selection you took minutes over would vanish silently.
 - **Validation does not create folders.** `checkdir` only looks (does the folder
   exist, or if not, does its parent?); the actual `makedirs` happens at download
   or move time. This keeps a mistyped path from littering your disk.
@@ -227,8 +231,7 @@ the popup was closed and reopened.
 | `background.js` | Service worker: download queue, context menus, network listener |
 | `scanner.js` | DOM scanner injected into the page |
 | `popup.html/css/js` | Grid UI, filters, selection |
-| `i18n.js` | Turkish/English strings + the `t()` helper; shared by popup, options page and service worker |
-| `options.html/js` | Settings page (opens in a tab) |
+| `i18n.js` | Turkish/English strings + the `t()` helper; shared by the popup and the service worker |
 | `icons/` | Extension icons (16/32/48/128) + `make-icon.py` that generates them (Pillow) |
 | `native/ytdlp_host.py` | Native messaging host: calls yt-dlp, opens the folder window, moves files |
 | `setup-native.ps1` | Bridge setup (bat + host manifest + registry) |

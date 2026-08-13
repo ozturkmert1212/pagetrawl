@@ -91,6 +91,48 @@
 
   <main id="grid"></main>
 
+  <!-- Ayarlar ekranı. Popup'ın üstüne sağdan kayarak geliyor: ayrı bir sekme
+       değil ama ayrı bir ekran gibi davranıyor, geri okuyla kapanıyor. -->
+  <section id="settingsView" class="view">
+    <div class="view-bar">
+      <button class="icon" id="settingsBack" data-i18n-title="settings.back" title="Geri">←</button>
+      <strong data-i18n="gear.title">Ayarlar</strong>
+    </div>
+
+    <div class="view-body">
+      <label class="opt-row">
+        <span data-i18n="settings.folder">Kayıt klasörü</span>
+        <span class="folder-row">
+          <input type="text" id="folder" data-i18n-ph="folder.ph" placeholder="Yol okunuyor…" spellcheck="false">
+          <button class="ghost" id="browse" data-i18n="settings.browse">Gözat…</button>
+          <button class="link" id="folderReset" data-i18n="settings.reset">Sıfırla</button>
+        </span>
+      </label>
+      <p id="folderNote" class="muted small"></p>
+
+      <label class="opt-row narrow">
+        <span data-i18n="settings.concurrent">Aynı anda indirme</span>
+        <input type="number" id="maxConcurrent" min="1" max="10" value="4">
+      </label>
+
+      <label class="opt-row">
+        <span data-i18n="settings.template">Dosya adı şablonu</span>
+        <input type="text" id="template" spellcheck="false" placeholder="{host}/{name}.{ext}">
+      </label>
+      <p class="muted small" data-i18n="settings.templateHint"></p>
+
+      <label class="check">
+        <input type="checkbox" id="saveAs">
+        <span data-i18n="settings.saveAs">Her dosyada nereye kaydedileceğini sor</span>
+      </label>
+    </div>
+
+    <div class="view-foot">
+      <button class="primary" id="saveSettings" data-i18n="settings.save">Kaydet</button>
+      <span id="saved" class="muted small"></span>
+    </div>
+  </section>
+
   <div id="notice" class="notice hidden"></div>
 
   <footer>
