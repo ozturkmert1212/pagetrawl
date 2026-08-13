@@ -48,9 +48,37 @@ After changing code, hit the reload (⟳) button on `chrome://extensions`. For
 - Two flags in the header switch the interface language between **Turkish and
   English**; the choice is remembered. Chrome's own `chrome.i18n` follows the
   browser language and can't be switched at runtime, so the strings live in
-  `i18n.js` instead
+  `i18n.js` instead. The service worker loads the same file via `importScripts`,
+  so context menus and bridge errors follow the choice too — the bridge itself
+  sends message *keys* rather than sentences
 
 Files are saved as `Downloads/{site-name}/{file-name}.{ext}`.
+
+### Settings
+
+⚙ opens the **settings page in a tab** (`options.html`), not a panel inside the
+popup. That is deliberate: the folder picker window takes focus, and Chrome
+closes a popup the moment it loses focus — so the result of your choice was
+invisible until you reopened the extension. A tab survives.
+
+The page holds the save folder, the concurrency limit, the filename template and
+the "ask where to save" toggle. Language is switched from the popup's flags.
+
+#### Filename template
+
+Default `{host}/{name}.{ext}`. Fields:
+
+| Field | Value |
+|---|---|
+| `{host}` | site name (`example.com`) |
+| `{title}` | page title — falls back to `{host}` when the page has no usable title |
+| `{name}` | the file's own name from the URL |
+| `{ext}` | extension (guessed when the URL has none) |
+| `{date}` | `YYYY-MM-DD` |
+
+A slash creates a subfolder, so `{host}/{title}/{name}.{ext}` groups downloads
+per page. Everything is sanitized: characters illegal on Windows/macOS/Linux
+become `_`, and each field is capped at 100 characters.
 
 ### Save folder
 
@@ -85,12 +113,12 @@ shows a red warning — they never disappear silently.
 
 Details:
 
-- **The popup closes when the folder window opens.** Chrome closes a popup that
-  loses focus, and that can't be prevented. The result is written to
-  `chrome.storage.session`; next time you open the extension, the settings panel
-  opens by itself and reports "Save folder updated." A keepAlive runs for the
-  duration of `dirPending` so the worker doesn't die while the window is open —
-  otherwise a selection you took minutes over would vanish silently.
+- **The folder window no longer costs you the result.** Chrome closes a popup
+  that loses focus and that can't be prevented, which is why settings moved to a
+  tab — it stays open and receives the answer live. The result is still written
+  to `chrome.storage.session` as a fallback. A keepAlive runs for the duration of
+  `dirPending` so the worker doesn't die while the window is open; otherwise a
+  selection you took minutes over would vanish silently.
 - **Validation does not create folders.** `checkdir` only looks (does the folder
   exist, or if not, does its parent?); the actual `makedirs` happens at download
   or move time. This keeps a mistyped path from littering your disk.
@@ -199,7 +227,8 @@ the popup was closed and reopened.
 | `background.js` | Service worker: download queue, context menus, network listener |
 | `scanner.js` | DOM scanner injected into the page |
 | `popup.html/css/js` | Grid UI, filters, selection |
-| `i18n.js` | Turkish/English strings for the popup + the `t()` helper |
+| `i18n.js` | Turkish/English strings + the `t()` helper; shared by popup, options page and service worker |
+| `options.html/js` | Settings page (opens in a tab) |
 | `icons/` | Extension icons (16/32/48/128) + `make-icon.py` that generates them (Pillow) |
 | `native/ytdlp_host.py` | Native messaging host: calls yt-dlp, opens the folder window, moves files |
 | `setup-native.ps1` | Bridge setup (bat + host manifest + registry) |
@@ -261,9 +290,10 @@ the popup was closed and reopened.
   `chrome.downloads` with your cookies.
 - **`chrome://`, the Web Store and the PDF viewer can't be scanned** — Chrome
   blocks extension injection there.
-- **CSS background scanning is skipped on pages with more than 8000 elements**
-  (`getComputedStyle` gets very slow). You can change that threshold in
-  `scanner.js`.
+- **On very large pages some CSS background images may be missed.** The
+  `getComputedStyle` sweep is split into chunks and run through
+  `requestIdleCallback`, but a single scan round is capped at 3 seconds; if it
+  runs out, the popup says so rather than staying silent about it.
 
 ## Next steps (optional)
 
@@ -272,6 +302,9 @@ the popup was closed and reopened.
 - Auto-scrolling infinite-scroll galleries (scanning is live now; the only missing
   piece is doing the scrolling for the user)
 - Playlist support in the yt-dlp bar (dropping the `--no-playlist` flag)
+- A download history view (which page did this come from)
+- Firefox support — the `browser.*` APIs are largely the same, but the native
+  messaging manifest location and registry differ
 
 ## Scope and responsibility
 

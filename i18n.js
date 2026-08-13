@@ -1,7 +1,11 @@
 // ---------------------------------------------------------------------------
-// Popup dilleri. Chrome'un kendi chrome.i18n'i tarayıcı diline bakar ve
+// Arayüz dilleri. Chrome'un kendi chrome.i18n'i tarayıcı diline bakar ve
 // çalışma anında değiştirilemez; burada kullanıcı bayrağa basarak seçiyor,
 // o yüzden kendi tablomuzu tutuyoruz.
+//
+// Bu dosyayı popup `<script>` ile, service worker `importScripts()` ile
+// yüklüyor — worker'ın ürettiği metinler (sağ tık menüsü, köprü hataları) de
+// çevrilebilsin diye. Bu yüzden burada `document`'a koşulsuz dokunulmuyor.
 //
 // Anahtar yoksa Türkçeye düşülüyor: yeni bir metin eklenip çevirisi
 // unutulursa arayüzde `key.adi` görünmesin.
@@ -55,14 +59,21 @@ const I18N = {
     'folder.note.outside':
       'Fotoğraflar ve videolar buraya iner. Burası İndirilenler dışında olduğu için ' +
       'fotoğrafları köprü taşıyor — köprü kurulu değilse İndirilenler\\{stage} altında kalırlar.',
-    'folder.opening': 'Klasör penceresi açılıyor… Popup kapanacak, bu normal — seçtiğin klasör kaydedilir.',
     'folder.checking': 'Klasör doğrulanıyor…',
+    'opt.heading': 'PageTrawl ayarları',
+    'opt.saved': 'Kaydedildi.',
+    'settings.template': 'Dosya adı şablonu',
+    'settings.templateHint':
+      'Kullanılabilir alanlar: {host} site adı · {title} sayfa başlığı · {name} dosya adı · ' +
+      '{ext} uzantı · {date} tarih (YYYY-AA-GG). Eğik çizgi alt klasör açar. ' +
+      '{title} boşsa yerine site adı yazılır.',
     'folder.canceled': 'İptal edildi.',
 
     'grid.unscannable': 'Bu sayfa taranamıyor.',
     'grid.noMatch': 'Bu filtrelerle eşleşen medya yok.',
     'notice.blob': '{n} adet blob: video atlandı — bunlar parçalı akış (HLS/DASH) ve eklentiden indirilemez.',
     'notice.capped': "Liste {max} öğede doldu; yeni gelenler eklenmiyor. Seçtiklerini indirip popup'ı yeniden aç.",
+    'notice.bgTruncated': 'Sayfa çok büyük olduğu için CSS arka plan görsellerinin bir kısmı taranamadı.',
 
     'tag.net': 'ağ',
     'tag.image': 'resim',
@@ -79,7 +90,28 @@ const I18N = {
     'err.unknown': 'bilinmiyor',
     'dl.running': 'İndiriliyor… {fin}/{total}',
     'dl.mixed': '{done} indi · {failed} başarısız',
-    'dl.done': '{done} dosya indi'
+    'dl.done': '{done} dosya indi',
+
+    // --- service worker + köprü (background.js, ytdlp_host.py) --------------
+    'action.title': 'PageTrawl — sayfadaki medyayı indir',
+    'menu.media': 'Bu medyayı indir',
+    'menu.link': 'Bağlantıyı indir',
+    'wk.folderUpdated': 'Kayıt klasörü güncellendi.',
+    'wk.moveNoBridge': 'Köprü çalışmadığı için dosyalar taşınamadı; İndirilenler\\{stage} altında duruyorlar.',
+    'wk.moveFailed': 'Dosya taşınamadı: {err}',
+    'wk.movesLost': 'Köprü bağlantısı koptuğu için {n} dosya taşınamadı; İndirilenler\\{stage} altındalar.',
+    'wk.dlCanceled': 'İndirme iptal edildi.',
+    'wk.dlFailed': 'İndirme başarısız oldu (kod {code}).',
+    'wk.bridgeMissing': 'Köprü kurulu değil. Klasörde `.\\setup-native.ps1 -ExtensionId {id}` komutunu çalıştır.',
+    'wk.bridgeLost': 'Köprü bağlantısı koptu. İndirme arka planda tamamlanmış olabilir — kayıt klasörüne bak.',
+    'wk.cancelNoPort': 'Bağlantı kopmuş olduğu için iptal edilemedi; indirme arka planda sürüyor olabilir.',
+    'host.pickdirFailed': 'Klasör penceresi açılamadı: {err}',
+    'host.pathUnreadable': 'Yol okunamadı: {err}',
+    'host.notADir': 'Burası bir klasör değil: {path}',
+    'host.noSuchDir': 'Böyle bir klasör yok: {path}',
+    'host.cookieRetry': 'Çerezli deneme başarısız, çerezsiz deneniyor…',
+    'host.canceling': 'İptal ediliyor…',
+    'host.noRunning': 'İptal edilecek çalışan indirme bulunamadı.'
   },
 
   en: {
@@ -129,14 +161,21 @@ const I18N = {
     'folder.note.outside':
       'Images and videos land here. Since this is outside Downloads, images are moved ' +
       'by the bridge — without the bridge installed they stay under Downloads\\{stage}.',
-    'folder.opening': 'Opening the folder window… The popup will close, which is normal — your choice is saved.',
     'folder.checking': 'Validating folder…',
+    'opt.heading': 'PageTrawl settings',
+    'opt.saved': 'Saved.',
+    'settings.template': 'Filename template',
+    'settings.templateHint':
+      'Available fields: {host} site name · {title} page title · {name} file name · ' +
+      '{ext} extension · {date} date (YYYY-MM-DD). A slash creates a subfolder. ' +
+      'If {title} is empty the site name is used instead.',
     'folder.canceled': 'Canceled.',
 
     'grid.unscannable': "This page can't be scanned.",
     'grid.noMatch': 'No media matches these filters.',
     'notice.blob': "Skipped {n} blob: video(s) — these are segmented streams (HLS/DASH) and can't be downloaded from the extension.",
     'notice.capped': 'The list filled up at {max} items; new ones are no longer added. Download your selection and reopen the popup.',
+    'notice.bgTruncated': 'The page is very large, so some CSS background images could not be scanned.',
 
     'tag.net': 'network',
     'tag.image': 'image',
@@ -153,7 +192,28 @@ const I18N = {
     'err.unknown': 'unknown',
     'dl.running': 'Downloading… {fin}/{total}',
     'dl.mixed': '{done} downloaded · {failed} failed',
-    'dl.done': '{done} files downloaded'
+    'dl.done': '{done} files downloaded',
+
+    // --- service worker + bridge (background.js, ytdlp_host.py) ------------
+    'action.title': 'PageTrawl — download media from this page',
+    'menu.media': 'Download this media',
+    'menu.link': 'Download link',
+    'wk.folderUpdated': 'Save folder updated.',
+    'wk.moveNoBridge': "The bridge isn't running, so files couldn't be moved; they're sitting under Downloads\\{stage}.",
+    'wk.moveFailed': "File couldn't be moved: {err}",
+    'wk.movesLost': 'The bridge connection dropped, so {n} file(s) were not moved; they are under Downloads\\{stage}.',
+    'wk.dlCanceled': 'Download canceled.',
+    'wk.dlFailed': 'Download failed (code {code}).',
+    'wk.bridgeMissing': 'The bridge is not installed. Run `.\\setup-native.ps1 -ExtensionId {id}` in the extension folder.',
+    'wk.bridgeLost': 'The bridge connection dropped. The download may have finished in the background — check the save folder.',
+    'wk.cancelNoPort': "Couldn't cancel because the connection dropped; the download may still be running in the background.",
+    'host.pickdirFailed': "Couldn't open the folder window: {err}",
+    'host.pathUnreadable': "Couldn't read the path: {err}",
+    'host.notADir': 'Not a folder: {path}',
+    'host.noSuchDir': 'No such folder: {path}',
+    'host.cookieRetry': 'Cookie attempt failed, retrying without cookies…',
+    'host.canceling': 'Canceling…',
+    'host.noRunning': 'No running download to cancel.'
   }
 };
 
@@ -167,7 +227,8 @@ function getLang() {
 
 function setLang(lang) {
   LANG = I18N[lang] ? lang : DEFAULT_LANG;
-  document.documentElement.lang = LANG;
+  // Service worker'da document yok; orada yalnızca metin üretmek için kullanılıyor.
+  if (typeof document !== 'undefined') document.documentElement.lang = LANG;
 }
 
 /** Çeviri + `{ad}` yer tutucularını doldurma. Anahtar yoksa Türkçeye düşer. */

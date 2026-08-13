@@ -43,6 +43,38 @@ body {
   overflow: hidden;
 }
 
+/* Seçenekler sayfası bir sekmede açılıyor: popup'ın sabit 780×600 kutusu
+   burada geçerli değil. Aynı stil dosyasını paylaşıyoruz ki renk değişkenleri
+   ve form kontrolleri tek yerde dursun. */
+body.options {
+  width: auto;
+  height: auto;
+  min-height: 100vh;
+  overflow: auto;
+  display: block;
+  padding: 28px 20px;
+}
+
+.opt-page { max-width: 680px; margin: 0 auto; }
+.opt-page h1 { font-size: 18px; margin: 0 0 18px; }
+
+.opt-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.opt-row { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+.opt-row + .opt-row { margin-top: 14px; }
+.opt-row.narrow input { width: 90px; }
+.opt-card p { margin: 6px 0 0; white-space: pre-line; }
+.opt-card p.err { color: #dc2626; }
+.opt-card .check { margin-top: 14px; }
+
+.opt-actions { display: flex; align-items: center; gap: 10px; }
+
 header {
   padding: 10px 12px 8px;
   background: var(--panel);

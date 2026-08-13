@@ -4,12 +4,39 @@
 // şeyi RAM'de tutmuyoruz, kuyruk chrome.storage.session'da duruyor.
 // ---------------------------------------------------------------------------
 
+// Popup'la ortak çeviri tablosu. Worker'ın da kendi metinleri var (sağ tık
+// menüsü, köprü hataları) ve bunlar popup'a hazır metin olarak gidiyor.
+importScripts('i18n.js');
+
 const DEFAULTS = {
   maxConcurrent: 4,
   template: '{host}/{name}.{ext}',
   folder: '',      // TEK kayıt klasörü: mutlak yol. Boşsa İndirilenler.
-  saveAs: false    // her dosyada Kaydet penceresini aç
+  saveAs: false,   // her dosyada Kaydet penceresini aç
+  lang: DEFAULT_LANG
 };
+
+// --- dil -------------------------------------------------------------------
+// Worker boşta ölüp dirildiği için dil RAM'de kalıcı değil: her uyanışta
+// storage'dan okunuyor. Metin üreten yerler bu sözü bekliyor, yoksa worker'ın
+// ilk mesajı seçili dil yüklenmeden Türkçe çıkardı.
+
+let langReady = (async () => {
+  const { settings } = await chrome.storage.local.get('settings');
+  setLang(settings?.lang || DEFAULT_LANG);
+})();
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.settings) return;
+  const next = changes.settings.newValue?.lang || DEFAULT_LANG;
+  if (next === getLang()) return;
+
+  setLang(next);
+  // Menü başlıkları ve araç çubuğu ipucu Chrome'da kayıtlı; dil değişince
+  // kendiliğinden güncellenmezler.
+  buildMenus();
+  chrome.action.setTitle({ title: t('action.title') });
+});
 
 // Seçilen klasör İndirilenler dışındaysa Chrome oraya yazamaz; dosya önce
 // İndirilenler'in altındaki bu ara klasöre iniyor, sonra köprü taşıyor.
@@ -50,7 +77,7 @@ function guessKind(url) {
  * Şablondan göreli dosya yolu üretir. chrome.downloads mutlak yol veya ".."
  * kabul etmez; her şey Downloads klasörünün altına göreli olmak zorunda.
  */
-function buildFilename(rawUrl, pageHost, template, kind) {
+function buildFilename(rawUrl, pageHost, template, kind, pageTitle = '') {
   let name = '';
   let ext = '';
 
@@ -80,8 +107,14 @@ function buildFilename(rawUrl, pageHost, template, kind) {
   }
   if (!name) name = 'dosya';
 
+  // {title}: sayfa başlığı. Boş olabilir (erişilemeyen sayfa, başlıksız sekme);
+  // o zaman host'a düşüyoruz, yoksa şablonda boş bir klasör adı oluşur ve
+  // "//" temizliği yüzünden dosya beklenmedik bir yere iner.
+  const title = sanitize(pageTitle) ;
+
   return template
     .replace(/{host}/g, sanitize(pageHost))
+    .replace(/{title}/g, title && title !== 'dosya' ? title : sanitize(pageHost))
     .replace(/{name}/g, sanitize(name))
     .replace(/{ext}/g, sanitize(ext))
     .replace(/{date}/g, new Date().toISOString().slice(0, 10))
@@ -149,7 +182,7 @@ async function paintProg(prog) {
 }
 
 /** items: [{url, kind}] */
-async function enqueue(items, pageHost) {
+async function enqueue(items, pageHost, pageTitle = '') {
   const { template, saveAs } = await getSettings();
   const plan = await folderPlan();
   // Hedef İndirilenler dışındaysa Chrome oraya yazamaz: ara klasöre indirip
@@ -161,7 +194,7 @@ async function enqueue(items, pageHost) {
   const jobs = items
     .filter((it) => it && it.url)
     .map((it) => {
-      const rel = buildFilename(it.url, pageHost, template, it.kind || guessKind(it.url));
+      const rel = buildFilename(it.url, pageHost, template, it.kind || guessKind(it.url), pageTitle);
       return {
         url: it.url,
         filename: prefix + rel,
@@ -245,19 +278,26 @@ chrome.downloads.onChanged.addListener((delta) => {
 
 // --- sağ tık menüleri ------------------------------------------------------
 
-chrome.runtime.onInstalled.addListener(() => {
+/** Menüleri sıfırdan kurar. Dil değişiminde de çağrılıyor. */
+function buildMenus() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: 'dl-src',
-      title: 'Bu medyayı indir',
+      title: t('menu.media'),
       contexts: ['image', 'video', 'audio']
     });
     chrome.contextMenus.create({
       id: 'dl-link',
-      title: 'Bağlantıyı indir',
+      title: t('menu.link'),
       contexts: ['link']
     });
   });
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await langReady;
+  buildMenus();
+  chrome.action.setTitle({ title: t('action.title') });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -274,7 +314,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (tab?.url) host = new URL(tab.url).hostname;
   } catch {}
 
-  await enqueue([{ url, kind: info.mediaType === 'video' ? 'video' : guessKind(url) }], host);
+  await enqueue([{ url, kind: info.mediaType === 'video' ? 'video' : guessKind(url) }], host, tab?.title || '');
 });
 
 // --- ağdan medya yakalama --------------------------------------------------
@@ -500,10 +540,24 @@ async function ytOutdir() {
   }
 }
 
-/** Ayar panelinde gösterilecek not; popup kapalıysa bir dahaki açılışta çıkar. */
-async function noteFolder(text, bad = false) {
+/**
+ * Ayar panelinde gösterilecek not; popup kapalıysa bir dahaki açılışta çıkar.
+ * Anahtarla çağrılıyor (metinle değil) ki dil worker'da çözülsün.
+ */
+async function noteFolder(key, vars = {}, bad = false, extra = '') {
+  await langReady;
+  // extra: teşhis için ham hata metni (çevrilmez, parantez içinde eklenir).
+  const text = t(key, vars) + (extra ? ' (' + extra + ')' : '');
   await chrome.storage.session.set({ folderMsg: text });
   chrome.runtime.sendMessage({ type: 'folder', note: text, bad }).catch(() => {});
+}
+
+/**
+ * Köprüden gelen hata metni. Host artık `errKey` gönderiyor; eski bir host
+ * sürümü hâlâ ham `error` yolluyorsa o kullanılıyor.
+ */
+function hostText(m) {
+  return m?.errKey ? t(m.errKey, m.errVars || {}) : m?.error || '';
 }
 
 // --- İndirilenler dışına taşıma --------------------------------------------
@@ -557,11 +611,7 @@ async function finishMove(id) {
   if (!ok) {
     movesInFlight--;
     syncKeepAlive();
-    await noteFolder(
-      'Köprü çalışmadığı için dosyalar taşınamadı; İndirilenler\\' + STAGE_DIR +
-      ' altında duruyorlar.',
-      true
-    );
+    await noteFolder('wk.moveNoBridge', { stage: STAGE_DIR }, true);
   }
 }
 
@@ -605,6 +655,7 @@ function keepAlive(on) {
 
 /** Popup açıksa canlı bildir; kapalıysa durumu storage'a yaz ki açılışta okusun. */
 async function pushStatus(patch) {
+  await langReady;
   const { ytStatus } = await chrome.storage.session.get('ytStatus');
   const next = { ...(ytStatus || {}), ...patch, at: Date.now() };
   await chrome.storage.session.set({ ytStatus: next });
@@ -616,7 +667,11 @@ function nativeConnect() {
 
   nativePort = chrome.runtime.connectNative(NATIVE_HOST);
 
-  nativePort.onMessage.addListener((m) => {
+  // Dil yüklenmeden t() çağrılırsa metin Türkçe çıkar; mesajları o yüzden
+  // langReady'den sonra işliyoruz.
+  nativePort.onMessage.addListener(async (m) => {
+    await langReady;
+
     if (m.type === 'probe') {
       // Probe'u indirme durumuna KARIŞTIRMIYORUZ. Eskiden `pushStatus({probe})`
       // deniyordu; alan durum nesnesine yapışıp kalıyor, popup da her canlı
@@ -633,16 +688,17 @@ function nativeConnect() {
       (async () => {
         if (m.path) await saveSettings({ folder: m.path });
         if (m.path || m.error) {
+          await langReady;
           await chrome.storage.session.set({
-            folderMsg: m.error || 'Kayıt klasörü güncellendi.'
+            folderMsg: hostText(m) || t('wk.folderUpdated')
           });
         }
         chrome.runtime
           .sendMessage({
             type: 'folder',
             path: m.path || '',
-            error: m.error || '',
-            canceled: !m.path && !m.error
+            error: hostText(m),
+            canceled: !m.path && !m.error && !m.errKey
           })
           .catch(() => {});
       })();
@@ -650,11 +706,11 @@ function nativeConnect() {
       movesInFlight = Math.max(0, movesInFlight - 1);
       syncKeepAlive();
       // Taşıma başarısızsa dosya ara klasörde kaldı — sessizce yutmuyoruz.
-      if (!m.ok) noteFolder('Dosya taşınamadı: ' + (m.error || '?'), true);
+      if (!m.ok) noteFolder('wk.moveFailed', { err: hostText(m) || '?' }, true);
     } else if (m.type === 'progress') {
       pushStatus({ running: true, percent: m.percent, line: m.line, error: null });
     } else if (m.type === 'log') {
-      pushStatus({ running: true, line: m.line });
+      pushStatus({ running: true, line: m.lineKey ? t(m.lineKey, m.lineVars || {}) : m.line });
     } else if (m.type === 'done') {
       ytRunning = false;
       syncKeepAlive();
@@ -668,7 +724,7 @@ function nativeConnect() {
         pushStatus({
           running: false,
           percent: 0,
-          line: m.error || 'İndirme iptal edildi.',
+          line: hostText(m) || t('wk.dlCanceled'),
           error: null
         });
       } else {
@@ -677,13 +733,14 @@ function nativeConnect() {
           percent: undefined,
           line: '',
           dir: m.outdir || '',
-          error: m.error || `İndirme başarısız oldu (kod ${m.code}).`
+          error: hostText(m) || t('wk.dlFailed', { code: m.code })
         });
       }
     }
   });
 
-  nativePort.onDisconnect.addListener(() => {
+  nativePort.onDisconnect.addListener(async () => {
+    // lastError'ı hemen oku: await'ten sonra kaybolur.
     const err = chrome.runtime.lastError?.message || '';
     const wasRunning = ytRunning;
     const lostMoves = movesInFlight;
@@ -694,31 +751,24 @@ function nativeConnect() {
     movesInFlight = 0;
     keepAlive(false);
 
+    await langReady;
+
     // Cevabı gelmeyen taşımalar: dosyalar ara klasörde kaldı, söyle.
     if (lostMoves) {
-      noteFolder(
-        'Köprü bağlantısı koptuğu için ' + lostMoves + ' dosya taşınamadı; ' +
-        'İndirilenler\\' + STAGE_DIR + ' altındalar.' + (err ? ' (' + err + ')' : ''),
-        true
-      );
+      noteFolder('wk.movesLost', { n: lostMoves, stage: STAGE_DIR }, true, err);
     }
 
     if (err && !wasRunning) {
       pushStatus({
         running: false,
-        error:
-          'Köprü kurulu değil. Klasörde `.\\setup-native.ps1 -ExtensionId ' +
-          chrome.runtime.id +
-          '` komutunu çalıştır. (' + err + ')'
+        error: t('wk.bridgeMissing', { id: chrome.runtime.id }) + ' (' + err + ')'
       });
     } else if (wasRunning) {
       // Eskiden burası sessizce geçiliyordu; bar sonsuza kadar "çalışıyor"
       // durumunda kalıyordu. Kopuş normal (hatasız) da olsa haber ver.
       pushStatus({
         running: false,
-        error:
-          'Köprü bağlantısı koptu. İndirme arka planda tamamlanmış olabilir — ' +
-          'kayıt klasörüne bak.' + (err ? ' (' + err + ')' : '')
+        error: t('wk.bridgeLost') + (err ? ' (' + err + ')' : '')
       });
     }
   });
@@ -728,7 +778,8 @@ function nativeConnect() {
 
 function nativeSend(payload) {
   try {
-    nativeConnect().postMessage(payload);
+    // Host kendi metinlerini (klasör penceresi başlığı) seçili dilde üretsin.
+    nativeConnect().postMessage({ ...payload, lang: getLang() });
     return true;
   } catch (e) {
     pushStatus({ running: false, error: e.message });
@@ -743,7 +794,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.action === 'download') {
       ytRunning = true;
       keepAlive(true);
-      pushStatus({ running: true, percent: 0, line: 'Başlatılıyor…', dir: '', error: null });
+      langReady.then(() =>
+        pushStatus({ running: true, percent: 0, line: t('yt.starting'), dir: '', error: null })
+      );
 
       // Klasörü çözmek ilk seferde sonda indirmesi gerektirebiliyor (mutlak yol
       // öğrenme), o yüzden asenkron: yanıtı beklemeden veriyoruz.
@@ -760,10 +813,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.action === 'cancel' && !nativePort) {
       ytRunning = false;
       syncKeepAlive();
-      pushStatus({
-        running: false,
-        error: 'Bağlantı kopmuş olduğu için iptal edilemedi; indirme arka planda sürüyor olabilir.'
-      });
+      langReady.then(() => pushStatus({ running: false, error: t('wk.cancelNoPort') }));
       sendResponse({ ok: false });
       return true;
     }
@@ -803,7 +853,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === 'download') {
-    enqueue(msg.items, msg.host)
+    enqueue(msg.items, msg.host, msg.title)
       .then((n) => sendResponse({ ok: true, count: n }))
       .catch((e) => sendResponse({ ok: false, error: e.message }));
     return true; // async yanıt

@@ -10,7 +10,7 @@
 // kalıcı. force=true gelirse bayrağa bakmadan tarıyoruz.
 // ---------------------------------------------------------------------------
 
-function collectMedia(force) {
+async function collectMedia(force) {
   const W = window;
   if (!W.__mdInit) {
     W.__mdInit = true;          // kurulum bir kez; başarısız olsa da tekrarlanmasın
@@ -120,11 +120,17 @@ function collectMedia(force) {
   }
 
   // --- CSS background-image ------------------------------------------------
-  // getComputedStyle her element için pahalı; çok büyük sayfalarda atlıyoruz.
+  // getComputedStyle her element için pahalı (her çağrı stil hesabı zorlar).
+  // Eskiden 8000 elementten büyük sayfalarda bu tarama TAMAMEN atlanıyordu:
+  // büyük galerilerde arka plan görselleri hiç listelenmiyordu ve kullanıcı
+  // bunu göremiyordu bile. Artık iş parçalara bölünüp tarayıcının boş anlarında
+  // (requestIdleCallback) yapılıyor — sayfa donmuyor, sınır da kalktı.
   const all = document.querySelectorAll('*');
-  if (all.length < 8000) {
-    for (const el of all) {
-      const bg = getComputedStyle(el).backgroundImage;
+  let bgTruncated = false;
+
+  const scanBg = (from, to) => {
+    for (let i = from; i < to; i++) {
+      const bg = getComputedStyle(all[i]).backgroundImage;
       if (!bg || bg === 'none') continue;
       const matches = bg.match(/url\((['"]?)(.*?)\1\)/g);
       if (!matches) continue;
@@ -133,6 +139,33 @@ function collectMedia(force) {
         add(u, 'image', { w: 0, h: 0, bg: true });
       }
     }
+  };
+
+  if (typeof requestIdleCallback === 'function') {
+    const BUDGET_MS = 3000;   // tek tarama turunun üst sınırı
+    const CHUNK = 250;
+    const started = Date.now();
+    let i = 0;
+
+    while (i < all.length) {
+      if (Date.now() - started > BUDGET_MS) {
+        bgTruncated = true;
+        break;
+      }
+      // timeout şart: meşgul bir sayfada boş an hiç gelmeyebilir ve tarama
+      // sonsuza kadar beklerdi.
+      const deadline = await new Promise((res) => requestIdleCallback(res, { timeout: 300 }));
+      do {
+        const end = Math.min(i + CHUNK, all.length);
+        scanBg(i, end);
+        i = end;
+      } while (i < all.length && deadline.timeRemaining() > 4);
+    }
+  } else if (all.length < 8000) {
+    // requestIdleCallback yoksa eski davranış: küçük sayfalarda tek seferde.
+    scanBg(0, all.length);
+  } else {
+    bgTruncated = true;
   }
 
   // --- <video> / <audio> ---------------------------------------------------
@@ -160,6 +193,7 @@ function collectMedia(force) {
   return {
     items,
     unsupported,
+    bgTruncated,
     frameUrl: location.href,
     host: location.hostname
   };

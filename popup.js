@@ -184,6 +184,7 @@ function groupVariants(list) {
 const byUrl = new Map();
 let blobSeen = 0;
 let capped = false;
+let bgTruncated = false;   // CSS arka plan taraması süre bütçesine takıldı
 
 // Sonsuz kaydırılan bir sayfada popup saatlerce açık kalabilir; liste sınırsız
 // büyürse popup kilitlenir. Üst sınıra gelince yeni gelenleri almayı bırakıyoruz.
@@ -216,6 +217,9 @@ function showNotice() {
   }
   if (capped) {
     msgs.push(t('notice.capped', { max: MAX_ITEMS }));
+  }
+  if (bgTruncated) {
+    msgs.push(t('notice.bgTruncated'));
   }
   notice.textContent = msgs.join(' ');
   notice.classList.toggle('hidden', !msgs.length);
@@ -264,6 +268,9 @@ async function refresh(full = false) {
       if (!r || r.unchanged) continue;   // o çerçevede değişen bir şey yok
       found.push(...r.items);
       blobs += r.unsupported.length;
+      // Arka plan taraması süre bütçesine takıldıysa liste eksik; sustuğumuzda
+      // kullanıcı neyin kaçtığını bilemez.
+      if (r.bgTruncated) bgTruncated = true;
     }
     // Bu turda taranmayan çerçeveler sayıyı düşük gösterebilir; en yükseği tut.
     blobSeen = Math.max(blobSeen, blobs);
@@ -745,83 +752,10 @@ $('#size').addEventListener('input', (e) => {
 
 $('#size').addEventListener('change', (e) => saveSetting({ tileSize: +e.target.value }));
 
-// Klasör yolunu panel açılırken soruyoruz: mutlak yol henüz bilinmiyorsa arka
-// plan sessiz bir sonda indirmesi yapıyor, bunu her popup açılışında değil
-// yalnızca ayarlara bakıldığında yaptırmak daha az sürpriz.
-$('#gear').addEventListener('click', () => {
-  const panel = $('#settings');
-  panel.classList.toggle('hidden');
-  if (!panel.classList.contains('hidden')) showFolder();
-});
-
-// --- kayıt klasörü ---------------------------------------------------------
-
-// Fotoğraf ve videolar için TEK klasör. Kutuda tam yol duruyor; İndirilenler'in
-// mutlak yolunu API vermediği için arka plan onu bir kez sonda indirmesiyle
-// öğreniyor, biz hazır değeri istiyoruz.
-async function showFolder() {
-  const info = await chrome.runtime.sendMessage({ type: 'getFolderInfo' });
-  const box = $('#folder');
-  box.value = info?.set ? info.abs : '';
-  box.placeholder = info?.root || t('folder.rootPh');
-
-  // Bir önceki "Gözat" denemesinin sonucu varsa onu göster: klasör penceresi
-  // popup'ı kapattığı için o an gösterilememişti.
-  setFolderNote(info?.folderMsg || defaultNote(info), !!info?.folderMsg && !info?.set);
-}
-
-function defaultNote(info) {
-  if (!info?.set) return t('folder.note.unset');
-  if (!info.outside) return t('folder.note.inside');
-  return t('folder.note.outside', { stage: info.stage || 'pagetrawl-gecici' });
-}
-
-function setFolderNote(text, bad = false) {
-  $('#folderNote').textContent = text;
-  $('#folderNote').classList.toggle('err', bad);
-}
-
-// Klasörü seçtiren pencereyi köprü açıyor: Chrome'un kendi Kaydet penceresi
-// yalnızca İndirilenler altını kabul ediyordu, köprününki her yeri seçebiliyor.
-$('#browse').addEventListener('click', () => {
-  setFolderNote(t('folder.opening'));
-  chrome.runtime.sendMessage({ type: 'pickFolder' });
-});
-
-$('#folderReset').addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'setFolder', path: '' });
-});
-
-// Elle yazılan/yapıştırılan yol: köprü sadece doğruluyor, klasörü indirme
-// anında açıyor — yanlış yazılmış bir yol diske çöp klasör bırakmasın.
-$('#folder').addEventListener('change', (e) => {
-  const path = e.target.value.trim();
-  setFolderNote(path ? t('folder.checking') : '');
-  chrome.runtime.sendMessage({ type: 'setFolder', path });
-});
-
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type !== 'folder') return;
-
-  if (msg.note) setFolderNote(msg.note, !!msg.bad);          // ör. taşıma hatası
-  else if (msg.error) setFolderNote(msg.error, true);
-  else if (msg.canceled) setFolderNote(t('folder.canceled'));
-  else if (msg.path) { $('#folder').value = msg.path; showFolder(); }
-  else { $('#folder').value = ''; showFolder(); }
-});
-
-$('#saveAs').addEventListener('change', (e) => saveSetting({ saveAs: e.target.checked }));
-
-$('#saveSettings').addEventListener('click', async () => {
-  const { settings } = await chrome.storage.local.get('settings');
-  await chrome.storage.local.set({
-    settings: {
-      ...(settings || {}),   // tileSize, folder vs. ezilmesin
-      maxConcurrent: Math.max(1, Math.min(10, parseInt($('#maxConcurrent').value, 10) || 4))
-    }
-  });
-  $('#settings').classList.add('hidden');
-});
+// Ayarlar artık popup'ın içinde değil, ayrı bir sekmede. Sebebi: klasör
+// penceresi odağı alınca Chrome popup'ı kapatıyor ve kullanıcı seçiminin
+// sonucunu göremiyordu. Sekme odak kaybında kapanmıyor.
+$('#gear').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 // --- toplu indirme ilerlemesi ----------------------------------------------
 // Kuyruk service worker'da işliyor; popup kapansa da sürüyor. Bu yüzden durumu
@@ -875,7 +809,12 @@ $('#download').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = t('btn.queueing');
 
-  const res = await chrome.runtime.sendMessage({ type: 'download', items, host });
+  const res = await chrome.runtime.sendMessage({
+    type: 'download',
+    items,
+    host,
+    title: tab.title || ''   // şablondaki {title} için
+  });
 
   if (res?.ok) {
     // Kuyruğa gidenleri "indirildi" olarak işaretle ve seçimi bırak; popup
@@ -1179,7 +1118,6 @@ function applyLang(lang) {
   showNotice();
   renderDl(lastProg);
   if (lastYtStatus) renderYtStatus(lastYtStatus);
-  if (!$('#settings').classList.contains('hidden')) showFolder();
   if (tab) initYt();                 // video kartındaki yedek başlık
 }
 
@@ -1203,11 +1141,6 @@ $('#langs').addEventListener('click', (e) => {
     .forEach((b) => b.classList.toggle('on', b.dataset.lang === getLang()));
   applyStaticI18n();
 
-  if (settings) {
-    $('#maxConcurrent').value = settings.maxConcurrent ?? 4;
-    $('#saveAs').checked = !!settings.saveAs;
-  }
-
   // Eski sürümden 100 gibi çok küçük bir değer kalmış olabilir; alt sınıra çek.
   const tile = Math.min(340, Math.max(140, settings?.tileSize ?? 200));
   $('#size').value = tile;
@@ -1221,14 +1154,6 @@ $('#langs').addEventListener('click', (e) => {
   $('#minWidth').value = settings?.minWidth ?? 0;
 
   renderDl(await chrome.runtime.sendMessage({ type: 'getProg' }));
-
-  // Önceki "Gözat" denemesi bir sonuç bıraktıysa (popup o an kapandığı için
-  // gösterilememişti) ayar panelini kendiliğinden aç ve sonucu göster.
-  const { folderMsg } = await chrome.storage.session.get('folderMsg');
-  if (folderMsg) {
-    $('#settings').classList.remove('hidden');
-    showFolder();
-  }
 
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 

@@ -6,6 +6,10 @@ geri yollar.
 Protokol (Chrome native messaging): stdin/stdout üzerinden, her mesajın önünde
 4 baytlık little-endian uzunluk + UTF-8 JSON gövde.
 
+Her gelen mesajda ayrıca {"lang": "tr"|"en"} bulunur; host yalnızca kendi
+açtığı klasör penceresinin başlığı için kullanır. Eklentiye giden hatalar
+metin değil `errKey` + `errVars` olarak gider, çeviriyi i18n.js yapar.
+
 Gelen mesajlar:
     {"action": "download", "url": ..., "mode": "best|1080|720|audio", "outdir": ...}
     {"action": "probe"}     -> yt-dlp / ffmpeg var mı, sürüm ne
@@ -50,6 +54,25 @@ CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 _send_lock = threading.Lock()
 _current = None  # çalışan yt-dlp süreci
 _canceled = False  # kullanıcı mı durdurdu, yoksa gerçekten hata mı verdi
+
+# --- dil -------------------------------------------------------------------
+# Eklentiye giden hatalar BURADA çevrilmiyor: anahtar olarak gidiyor ve
+# popup'ta i18n.js çözüyor. Böylece çeviriler tek yerde duruyor.
+#
+# Tek istisna klasör penceresinin başlığı: onu işletim sistemine veren biziz,
+# eklentinin çevirmesine fırsat yok. O yüzden burada küçük bir tablo var ve
+# eklenti her mesajda seçili dili gönderiyor.
+
+LANG = "tr"
+
+UI = {
+    "tr": {"pick_title": "Dosyalarin inecegi klasoru sec"},
+    "en": {"pick_title": "Choose the folder for downloads"},
+}
+
+
+def ui(key):
+    return UI.get(LANG, UI["tr"]).get(key) or UI["tr"][key]
 
 
 # --- protokol --------------------------------------------------------------
@@ -144,7 +167,7 @@ def _ask_dir_tk(initial):
     root.attributes("-topmost", True)
     try:
         return filedialog.askdirectory(
-            title="Dosyaların ineceği klasörü seç",
+            title=ui("pick_title"),
             initialdir=initial or os.path.expanduser("~"),
             mustexist=False,
         )
@@ -162,7 +185,7 @@ def _ask_dir_powershell(initial):
     script = (
         "Add-Type -AssemblyName System.Windows.Forms;"
         "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
-        "$d.Description = 'Dosyalarin inecegi klasoru sec';"
+        f"$d.Description = '{ui('pick_title')}';"
         f"$d.SelectedPath = '{(initial or os.path.expanduser('~'))}';"
         "if ($d.ShowDialog() -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }"
     )
@@ -175,7 +198,8 @@ def _ask_dir_powershell(initial):
 
 def pick_dir(msg):
     initial = msg.get("path") or ""
-    path, error = "", ""
+    path = ""
+    err_key, err_vars = "", {}
     try:
         path = _ask_dir_tk(initial)
     except Exception as e:
@@ -183,37 +207,40 @@ def pick_dir(msg):
             try:
                 path = _ask_dir_powershell(initial)
             except Exception as e2:
-                error = f"Klasör penceresi açılamadı: {e2}"
+                err_key, err_vars = "host.pickdirFailed", {"err": str(e2)}
         else:
-            error = f"Klasör penceresi açılamadı: {e}"
+            err_key, err_vars = "host.pickdirFailed", {"err": str(e)}
 
-    if path and not error:
-        path, error = check_dir(path)
-    send({"type": "dir", "path": path, "error": error})
+    if path and not err_key:
+        path, err_key, err_vars = check_dir(path)
+    send({"type": "dir", "path": path, "errKey": err_key, "errVars": err_vars})
 
 
 def check_dir(path):
     """
     Yolu normalleştirir ve kullanılabilir mi bakar. Klasörü BURADA açmıyoruz:
     yanlış yazılmış bir yol yüzünden diske çöp klasör açılmasın. Gerçekten
-    gerektiğinde (indirme anında) zaten os.makedirs çalışıyor.  -> (path, error)
+    gerektiğinde (indirme anında) zaten os.makedirs çalışıyor.
+
+    -> (path, errKey, errVars) — hata metni değil anahtar dönüyor; çeviri
+    eklenti tarafında (i18n.js) yapılıyor.
     """
     p = (path or "").strip()
     if not p:
-        return "", ""
+        return "", "", {}
 
     try:
         p = os.path.abspath(os.path.expanduser(os.path.normpath(p)))
     except Exception as e:
-        return "", f"Yol okunamadı: {e}"
+        return "", "host.pathUnreadable", {"err": str(e)}
 
     if os.path.isdir(p):
-        return p, ""
+        return p, "", {}
     if os.path.exists(p):
-        return "", "Burası bir klasör değil: " + p
+        return "", "host.notADir", {"path": p}
     if os.path.isdir(os.path.dirname(p)):
-        return p, ""   # üst klasör var; indirme sırasında oluşturulacak
-    return "", "Böyle bir klasör yok: " + p
+        return p, "", {}   # üst klasör var; indirme sırasında oluşturulacak
+    return "", "host.noSuchDir", {"path": p}
 
 
 # --- taşıma ----------------------------------------------------------------
@@ -322,8 +349,7 @@ def download(msg):
     if runtime:
         args += ["--js-runtimes", runtime]
     else:
-        send({"type": "log",
-              "line": "JS motoru yok (deno/node/bun) -> YouTube indirmeleri başarısız olabilir."})
+        send({"type": "log", "lineKey": "probe.noJs"})
 
     # Çerezler VARSAYILAN OLARAK KAPALI. Chrome 127+ çerez veritabanını
     # App-Bound Encryption ile şifreliyor ve yt-dlp Windows'ta bunu çözemiyor
@@ -365,7 +391,7 @@ def download(msg):
                   "outdir": outdir})
             return
         if i < len(attempts) - 1:
-            send({"type": "log", "line": "Çerezli deneme başarısız, çerezsiz deneniyor…"})
+            send({"type": "log", "lineKey": "host.cookieRetry"})
 
     send({"type": "done", "ok": False, "code": code, "outdir": outdir})
 
@@ -373,7 +399,7 @@ def download(msg):
 # --- ana döngü -------------------------------------------------------------
 
 def main():
-    global _canceled
+    global _canceled, LANG
 
     while True:
         try:
@@ -383,6 +409,11 @@ def main():
             return
         if msg is None:
             return
+
+        # Eklenti seçili dili her mesajda gönderiyor; host'un kalıcı bir
+        # ayarı yok, kullanıcı dili değiştirdiğinde bir sonraki mesajla gelir.
+        if msg.get("lang"):
+            LANG = msg["lang"]
 
         action = msg.get("action")
 
@@ -413,8 +444,8 @@ def main():
             threading.Thread(target=pick_dir, args=(msg,), daemon=False).start()
 
         elif action == "checkdir":
-            path, error = check_dir(msg.get("path") or "")
-            send({"type": "dir", "path": path, "error": error})
+            path, err_key, err_vars = check_dir(msg.get("path") or "")
+            send({"type": "dir", "path": path, "errKey": err_key, "errVars": err_vars})
 
         elif action == "move":
             # Ayrı thread: başka diske taşıma kopyalama demek, sürebilir. Ana
@@ -425,11 +456,11 @@ def main():
             if _current and _current.poll() is None:
                 _canceled = True
                 _current.kill()
-                send({"type": "log", "line": "İptal ediliyor…"})
+                send({"type": "log", "lineKey": "host.canceling"})
             else:
                 # Bu süreçte çalışan indirme yok (ör. köprü yeniden bağlandı).
                 send({"type": "done", "ok": False, "code": -2, "canceled": True,
-                      "error": "İptal edilecek çalışan indirme bulunamadı."})
+                      "errKey": "host.noRunning"})
 
 
 if __name__ == "__main__":
