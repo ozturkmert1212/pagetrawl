@@ -1,0 +1,487 @@
+:root {
+  /* Kart genişliği — üstteki kaydıraç bunu JS ile değiştiriyor.
+     Yükseklik ayrı bir değişken DEĞİL: aspect-ratio ile gerçek genişlikten
+     türetiliyor, böylece sütun 1fr ile esnese bile kare orantılı kalıyor. */
+  --tile-w: 200px;
+
+  --bg: #ffffff;
+  --panel: #f5f5f7;
+  --border: #dcdce1;
+  --text: #1c1c1e;
+  --muted: #6e6e78;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --tile: #e8e8ec;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1f;
+    --panel: #252529;
+    --border: #3a3a40;
+    --text: #ececf0;
+    --muted: #9a9aa4;
+    --accent: #4f83f1;
+    --accent-text: #0d1220;
+    --tile: #2e2e34;
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* Popup'ta kesin yükseklik şart: sadece max-height verilirse flex, main'i
+   küçültemez (indefinite height) ve ızgara scrollbar üretmeden taşar. */
+body {
+  width: 780px;
+  height: 600px;
+  margin: 0;
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+header {
+  padding: 10px 12px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.row { display: flex; align-items: center; gap: 8px; }
+.row.sub { margin-top: 8px; }
+.grow { flex: 1; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.hidden { display: none !important; }
+
+.chips { display: flex; gap: 4px; }
+
+.chip {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.chip.active {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+input[type="search"], input[type="number"], input[type="text"] {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font: inherit;
+}
+input[type="search"] { flex: 1; min-width: 0; }
+input[type="number"] { width: 72px; }
+
+.minw {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.icon {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  width: 30px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.sizer { display: flex; align-items: center; gap: 6px; }
+.sizer input[type="range"] {
+  width: 110px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.link {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+.link:hover { text-decoration: underline; }
+
+.ytbar {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* Kapak: sabit 16:9 kutu. Resim gelmezse kutu boş kalmasın diye altında
+   döşeme rengi + film ikonu duruyor. */
+.yt-cover {
+  flex: none;
+  width: 84px;
+  height: 47px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--tile) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="%23888"><path d="M4 5h16v14H4z" opacity=".25"/><path d="M10 8.5v7l6-3.5z"/></svg>') center/22px no-repeat;
+}
+.yt-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.yt-cover img:not([src]) { display: none; }
+
+/* min-width:0 olmadan uzun başlık flex kutuyu şişirir ve ellipsis çalışmaz. */
+.yt-info { flex: 1; min-width: 0; }
+.yt-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  /* İki satıra kadar; -webkit-box eski ama tüm Chromium'da tek çalışan yol. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.yt-sub {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ytbar select {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+}
+.yt-status { flex-basis: 100%; display: flex; align-items: center; gap: 8px; }
+.yt-status .bar, .dlprog .bar {
+  flex: none;
+  width: 140px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--tile);
+  overflow: hidden;
+}
+.yt-status .bar i, .dlprog .bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width .2s;
+}
+.dlprog .bar i.ok { background: #16a34a; }
+.dlprog .bar i.err { background: #dc2626; }
+.yt-status span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.yt-status span.err { color: #dc2626; white-space: normal; }
+
+.settings {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+.settings label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.settings label.wide { flex: 1; }
+.settings p { flex-basis: 100%; margin: 0; white-space: pre-line; }
+.settings p.err { color: #dc2626; }
+.settings label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+}
+
+.folder-row { display: flex; align-items: center; gap: 6px; }
+.folder-row input { flex: 1; min-width: 0; }
+.folder-row input:read-only { color: var(--muted); }
+
+.ghost {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ghost:hover { border-color: var(--accent); }
+.ghost:disabled { opacity: .5; cursor: default; }
+code {
+  background: var(--tile);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+main {
+  flex: 1 1 auto;
+  min-height: 0;          /* flex item'ın içeriğinin altına küçülebilmesi için */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--tile-w, 200px), 1fr));
+  grid-auto-rows: max-content;  /* satır yüksekliği İÇERİKTEN gelir; kart sayısı
+                                   artınca satırlar birbirini ezemez */
+  gap: 8px;
+  align-content: start;
+}
+
+.card {
+  position: relative;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--tile);
+  cursor: pointer;
+  user-select: none;
+}
+.card.sel {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 9999px rgba(37, 99, 235, .18);
+}
+
+/* Popup açıkken sayfaya sonradan düşen medya: bir an belirip sönen çerçeve,
+   böylece listeye bir şey eklendiği gözden kaçmıyor. */
+.card.fresh { animation: fresh 1.6s ease-out; }
+@keyframes fresh {
+  0%   { border-color: #16a34a; }
+  70%  { border-color: #16a34a; }
+  100% { border-color: transparent; }
+}
+
+/* Bu oturumda kuyruğa alınmış olanlar: soluk + yeşil rozet. */
+.card.done { opacity: .5; }
+.card.done .thumb, .card.done .ph { filter: grayscale(.6); }
+.card .done-badge {
+  position: absolute;
+  bottom: 22px;
+  left: 4px;
+  background: #16a34a;
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 9px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+/* Yükseklik CSS değişkeninden DEĞİL, kartın gerçek genişliğinden türüyor.
+   min-height ise son savunma: aspect-ratio bir sebeple uygulanmazsa bile
+   kart bu yüksekliğin altına inemez, yani asla çökmez. */
+.card .thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  min-height: 90px;
+  object-fit: cover;
+  display: block;
+  background: var(--tile);
+}
+
+.card .ph {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  min-height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+/* Video döşemesi: poster olmadığı için seçim geri bildirimi burada daha
+   belirgin olmalı, yoksa tıkladığını görmüyorsun. */
+.card .ph.video {
+  background: linear-gradient(135deg, #2b3350, #1b2035);
+  color: #c3cbe6;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.card .meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--bg);
+}
+.card .meta .mtext {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Aynı videonun 360p/720p/1080p hâlleri tek kartta toplanıyor: sağ alttaki ok
+   listeyi açıyor. Liste akışın içinde (absolute değil) — kart uzuyor, hiçbir
+   şeyin üstünü örtmüyor ve ızgara satırı max-content olduğu için sığıyor. */
+.card .chev {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(127, 127, 140, .2);
+  color: var(--text);
+  cursor: pointer;
+}
+.card .chev:hover { background: rgba(127, 127, 140, .38); }
+.card .chev svg { width: 9px; height: 6px; transition: transform .15s ease; }
+.card.open .chev svg { transform: rotate(180deg); }
+
+.card .vars {
+  display: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.card.open .vars { display: block; }
+
+.card .var {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.card .var:hover { background: rgba(127, 127, 140, .16); }
+.card .var .vname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .var .vsize { flex: 0 0 auto; opacity: .75; }
+.card .var.on { color: var(--accent); font-weight: 600; }
+.card .var.on .vname::before { content: "✓ "; }
+.card .var.done .vname { text-decoration: line-through; }
+
+.card .tag {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: rgba(0, 0, 0, .68);
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 9px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.card .tick {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: rgba(0, 0, 0, .4);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .3);
+}
+.card.sel .tick {
+  background: var(--accent);
+  border-color: #fff;
+}
+.card.sel .tick::after {
+  content: "✓";
+  color: #fff;
+  font-size: 11px;
+  line-height: 13px;
+  display: block;
+  text-align: center;
+}
+
+/* Alt bardaki toplu indirme çubuğu. */
+.dlprog { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dlprog .bar { width: 120px; }
+.dlprog span { white-space: nowrap; }
+
+.notice {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  flex: none;
+}
+
+footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  flex: none;
+}
+
+.primary {
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-text);
+  padding: 7px 16px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primary:disabled { opacity: .45; cursor: default; }
+.primary.small { padding: 5px 12px; font-weight: 500; font-size: 12px; }
+
+.empty {
+  grid-column: 1 / -1;
+  padding: 36px 12px;
+  text-align: center;
+  color: var(--muted);
+}

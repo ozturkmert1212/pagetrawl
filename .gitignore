@@ -1,0 +1,15 @@
+# Claude Code yerel ayarları (makineye özel yollar içerir)
+.claude/settings.local.json
+
+# Kuruluma özel — ikisini de setup-native.ps1 üretiyor.
+# Eklenti kimliği ve Python yolu her makinede farklı, commit'lenmemeli.
+native/com.bozgu.ytdlp.json
+native/ytdlp_host.bat
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Windows
+Thumbs.db
+desktop.ini

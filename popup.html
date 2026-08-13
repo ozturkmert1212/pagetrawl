@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="row">
+      <div class="chips" id="kindFilter">
+        <button class="chip active" data-kind="all">Tümü</button>
+        <button class="chip" data-kind="image">Resim</button>
+        <button class="chip" data-kind="video">Video</button>
+      </div>
+      <input type="search" id="search" placeholder="URL içinde ara…">
+      <label class="minw">
+        min genişlik
+        <input type="number" id="minWidth" value="0" min="0" step="50">
+      </label>
+      <button class="icon" id="gear" title="Ayarlar">⚙</button>
+    </div>
+
+    <div class="row sub">
+      <button class="link" id="selAll">Tümünü seç</button>
+      <button class="link" id="selNone">Temizle</button>
+      <button class="link" id="selInvert">Tersle</button>
+      <span class="sizer">
+        <input type="range" id="size" min="140" max="340" step="10" value="200"
+               title="Kart boyutu">
+        <span id="sizeLabel" class="muted small"></span>
+      </span>
+      <span class="grow"></span>
+      <span id="stats" class="muted"></span>
+    </div>
+
+    <div id="ytbar" class="ytbar hidden">
+      <div class="yt-cover" id="ytCover"><img id="ytThumb" alt=""></div>
+      <div class="yt-info">
+        <div class="yt-name" id="ytTitle">Video</div>
+        <div class="yt-sub muted small" id="ytSub"></div>
+      </div>
+      <select id="ytMode">
+        <option value="best">En iyi kalite</option>
+        <option value="1080">1080p'ye kadar</option>
+        <option value="720">720p'ye kadar</option>
+        <option value="audio">Sadece ses (mp3)</option>
+      </select>
+      <button class="primary small" id="ytGo">İndir</button>
+      <button class="link hidden" id="ytCancel">İptal</button>
+      <div class="yt-status hidden" id="ytStatus">
+        <div class="bar"><i id="ytBarFill"></i></div>
+        <span id="ytLine" class="muted small"></span>
+      </div>
+    </div>
+
+    <div id="settings" class="settings hidden">
+      <label>
+        Aynı anda indirme
+        <input type="number" id="maxConcurrent" min="1" max="10" value="4">
+      </label>
+      <label class="wide">
+        Kayıt klasörü (fotoğraf ve video — istediğin yer olabilir)
+        <span class="folder-row">
+          <input type="text" id="folder" placeholder="Yol okunuyor…" spellcheck="false">
+          <button class="ghost" id="browse">Gözat…</button>
+          <button class="link" id="folderReset">Sıfırla</button>
+        </span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="saveAs">
+        Her dosyada nereye kaydedileceğini sor
+      </label>
+      <p id="folderNote" class="muted small"></p>
+      <button class="primary small" id="saveSettings">Kaydet</button>
+    </div>
+  </header>
+
+  <main id="grid"></main>
+
+  <div id="notice" class="notice hidden"></div>
+
+  <footer>
+    <span id="selCount" class="muted">0 seçili</span>
+    <span id="dlProg" class="dlprog hidden">
+      <span class="bar"><i id="dlFill"></i></span>
+      <span id="dlText" class="muted small"></span>
+    </span>
+    <span class="grow"></span>
+    <button class="primary" id="download" disabled>Seçilenleri indir</button>
+  </footer>
+
+  <script src="scanner.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

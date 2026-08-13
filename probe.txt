@@ -1,0 +1,2 @@
+Bu dosya "Gözat" ile klasör seçmek için kullanılan geçici bir dosyadır.
+Eklenti seçimi okuduktan hemen sonra siler; burada görüyorsan silmeyi kaçırmış demektir, elle silebilirsin.
