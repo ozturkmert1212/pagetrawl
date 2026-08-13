@@ -1,272 +1,281 @@
 # PageTrawl
 
-> Trawl the open page for images and videos, filter them, download in bulk.
-> Chrome extension (Manifest V3, no build step) with a local yt-dlp bridge for
-> streaming sites. Documentation below is in Turkish.
+Trawl the open page for images and videos, filter them, download in bulk.
+A personal-use Chrome extension (Manifest V3, plain JS — no build step), with a
+local yt-dlp bridge for streaming sites.
 
-Açık sekmedeki fotoğraf ve videoları tarayıp listeleyen, filtreleyip toplu indiren
-kişisel kullanımlık bir Chrome eklentisi (Manifest V3, saf JS — build adımı yok).
+## Install
 
-## Kurulum
+1. Open `chrome://extensions`
+2. Turn on **Developer mode** (top right)
+3. **Load unpacked** → pick this folder
+4. The icon appears in the toolbar; pin it via the puzzle-piece menu
 
-1. Chrome'da `chrome://extensions` adresini aç
-2. Sağ üstten **Geliştirici modu**'nu (Developer mode) aç
-3. **Paketlenmemiş öğe yükle** (Load unpacked) → bu klasörü seç
-4. Araç çubuğunda ikon çıkar; sabitlemek için puzzle simgesine tıklayıp raptiyele
+After changing code, hit the reload (⟳) button on `chrome://extensions`. For
+`popup.js`/`popup.css` changes you also need to close and reopen the popup.
 
-Kodu değiştirdikten sonra `chrome://extensions` sayfasındaki yenile (⟳) düğmesine
-basman yeterli. `popup.js`/`popup.css` değişikliklerinde popup'ı kapatıp açmak da gerekir.
+> **If you cloned the repo, this is not enough.** The steps above give you page
+> scanning, the grid and bulk downloading — but streaming sites (YouTube,
+> Instagram…) and saving outside the Downloads folder need the **yt-dlp bridge,
+> installed separately**: its files are machine-specific and therefore not in the
+> repo. See the "yt-dlp bridge" section below.
 
-> **Depoyu klonladıysan bu kadarı yetmez.** Yukarıdaki adımlarla sayfa tarama,
-> ızgara ve toplu indirme çalışır; ama akış siteleri (YouTube, Instagram…) ve
-> İndirilenler dışına kaydetme için **yt-dlp köprüsünü ayrıca kurman gerekir** —
-> köprünün dosyaları makineye özel oldukları için depoda yok. Aşağıdaki
-> "yt-dlp köprüsü" bölümüne bak.
+## Usage
 
-## Kullanım
+- **Click the icon** → the page is scanned, media found is listed in a grid
+- The list stays **live** while the popup is open: as you scroll and new
+  images/videos load, cards append themselves (flashing a green border for a
+  moment). Navigating the tab to another page/video resets and rebuilds the list
+  — no need to close and reopen the popup
+- Click cards to select; `Select all` / `Invert` for bulk selection
+- **Different qualities of the same video collapse into one card**
+  (`clip_360p.mp4`, `clip_720p.mp4`, `clip_1080p.mp4` → a single card). The card
+  shows the best quality; the arrow at the bottom right opens the list so you can
+  pick a specific one. Clicking the card body selects the best quality, and
+  `Select all` takes one file per card — so you don't download the same video
+  three times
+- Filters at the top: type (image/video), URL search, minimum width
+- The **slider** sets card size (2–7 columns); your choice is remembered
+- The grid renders progressively: first 50 cards, then 50 more as you scroll
+- Selections and "downloaded" marks are remembered per tab, even if the popup closes
+- **Download selected** → enters the queue, flowing at the concurrency limit from
+  settings
+- Progress bar in the bottom bar: `Downloading… 12/49`, then a green
+  `49 files downloaded` when finished (red if there were errors). If the popup is
+  closed, the same number shows as a **badge on the extension icon** — the queue
+  keeps working in the background
+- **Right-click** any image or video → "Download this media" (single file, fast path)
 
-- **İkona tıkla** → sayfa taranır, bulunan medya ızgarada listelenir
-- Popup açık kaldığı sürece liste **canlı**: sayfayı kaydırıp yeni fotoğraf/video
-  yükledikçe kartlar kendiliğinden sona ekleniyor (bir an yeşil çerçeveyle
-  belirirler). Sekmede başka bir sayfaya/videoya geçersen liste sıfırlanıp
-  yeniden kuruluyor — popup'ı kapatıp açman gerekmiyor
-- Kartlara tıklayarak seç, `Tümünü seç` / `Tersle` ile toplu seç
-- **Aynı videonun farklı kaliteleri tek kartta toplanıyor** (`clip_360p.mp4`,
-  `clip_720p.mp4`, `clip_1080p.mp4` → bir kart). Kartta en iyi kalite duruyor;
-  sağ alttaki ok listeyi açıyor, oradan istediğin kaliteyi seçebiliyorsun.
-  Kart gövdesine tıklamak en iyi kaliteyi seçer, `Tümünü seç` de kart başına
-  tek dosya alır — aynı videoyu üç kez indirmiş olmuyorsun
-- Üstteki filtreler: tür (resim/video), URL araması, minimum genişlik
-- **Kaydıraç** kart boyutunu ayarlar (2–7 sütun arası); seçimin kaydedilir
-- Izgara kademeli çiziliyor: ilk 50 kart, aşağı indikçe 50'şer devamı
-- Seçimler ve "indirildi" işaretleri sekme bazında hatırlanır, popup kapansa bile
-- **Seçilenleri indir** → kuyruğa girer, ayarlardaki eşzamanlılık limitine göre akar
-- Alt barda ilerleme çubuğu: `İndiriliyor… 12/49`, bitince yeşil `49 dosya indi`
-  (hata varsa kırmızı). Popup kapalıysa aynı sayı **eklenti ikonunda rozet** olarak
-  görünür — kuyruk arka planda işlemeye devam eder
-- Herhangi bir resme/videoya **sağ tıkla** → "Bu medyayı indir" (tek dosya, hızlı yol)
+Files are saved as `Downloads/{site-name}/{file-name}.{ext}`.
 
-Dosyalar `İndirilenler/{site-adı}/{dosya-adı}.{uzantı}` şeklinde kaydedilir.
+### Save folder
 
-### Kayıt klasörü
+⚙ → **Browse…** picks a **single** folder for both images and videos. It **may
+live outside the Downloads folder** (Desktop, `D:\`, wherever). You can also type
+or paste a path into the box and press Enter; **Reset** returns to the default.
 
-⚙ → **Gözat…** ile fotoğrafların da videoların da ineceği **tek** klasörü
-seçiyorsun. Klasör **İndirilenler'in dışında olabilir** (Masaüstü, D:\ , ne
-istersen). Yolu kutuya elle yazıp/yapıştırıp Enter'a da basabilirsin; **Sıfırla**
-varsayılana döndürür.
+With the box empty, the default is: images to `Downloads\{site-name}\`, videos to
+`Downloads\yt-dlp\`.
 
-Kutu boşken varsayılan davranış: fotoğraflar `İndirilenler\{site-adı}\`,
-videolar `İndirilenler\yt-dlp\`.
+#### Why this is so convoluted
 
-#### Bu neden bu kadar dolambaçlı
+Chrome extensions **cannot write outside the Downloads folder** through
+`chrome.downloads` — absolute paths and `../` are rejected, and that is a fixed
+browser rule. The yt-dlp bridge writes files itself, so it isn't bound by that
+rule. To keep this a single setting, the bridge is used for both:
 
-Chrome eklentileri `chrome.downloads` ile **İndirilenler klasörünün dışına
-yazamaz** — mutlak yol ve `../` kabul edilmiyor, bu tarayıcının sabit kuralı.
-yt-dlp köprüsü ise dosyayı kendi yazdığı için bu kurala tabi değil. Tek bir ayar
-olsun diye köprüyü ikisi için de kullanıyoruz:
-
-| İş | Kim yapıyor |
+| Job | Who does it |
 |---|---|
-| Klasörü seçtiren pencere | Köprü (`pickdir` → tkinter, yedeği PowerShell `FolderBrowserDialog`) |
-| Yazılan yolu doğrulama | Köprü (`checkdir`) |
-| Videoyu yazma | Köprü (`-P outdir`) |
-| Fotoğrafı indirme | Chrome (`chrome.downloads`) |
-| Fotoğrafı İndirilenler dışına taşıma | Köprü (`move`) |
+| The folder picker window | Bridge (`pickdir` → tkinter, falling back to PowerShell `FolderBrowserDialog`) |
+| Validating a typed path | Bridge (`checkdir`) |
+| Writing the video | Bridge (`-P outdir`) |
+| Downloading the image | Chrome (`chrome.downloads`) |
+| Moving the image outside Downloads | Bridge (`move`) |
 
-Yani hedef İndirilenler'in **altındaysa** fotoğraf doğrudan oraya iner (köprüye
-hiç ihtiyaç yok). **Dışındaysa** fotoğraf önce `İndirilenler\pagetrawl-gecici\`
-altına iner, indirme biter bitmez köprü onu asıl yerine taşır ve boşalan ara
-klasörü siler. Köprü kurulu değilse dosyalar o ara klasörde kalır ve ayar
-panelinde kırmızı uyarı çıkar — sessizce kaybolmazlar.
+So if the target is **under** Downloads, images land there directly (the bridge
+isn't needed at all). If it is **outside**, an image first lands in
+`Downloads\pagetrawl-gecici\`, and the moment the download finishes the bridge
+moves it to its real destination and removes the empty staging folder. Without
+the bridge installed, files stay in that staging folder and the settings panel
+shows a red warning — they never disappear silently.
 
-Detaylar:
+Details:
 
-- **Klasör penceresi açılınca popup kapanır.** Chrome popup'ı odağı kaybedince
-  kapatır, engellenemiyor. Sonuç `chrome.storage.session`'a yazılıyor; eklentiyi
-  tekrar açtığında ayar paneli kendiliğinden açılıp "Kayıt klasörü güncellendi."
-  diyor. Pencere açıkken worker ölmesin diye `dirPending` süresince keepAlive
-  çalışıyor — yoksa dakikalarca beklenen seçim sessizce kaybolurdu.
-- **Doğrulama klasör oluşturmaz.** `checkdir` yalnızca bakar (klasör var mı, yoksa
-  üst klasörü var mı); asıl `makedirs` indirme/taşıma anında oluyor. Yanlış
-  yazılmış bir yol yüzünden diske çöp klasör açılmasın diye.
-- **Taşımada üzerine yazılmaz**: hedefte aynı ad varsa `ad (1).jpg` açılır. Dosya
-  bir an kilitli kalabildiği için (Chrome/antivirüs) taşıma 4 kez deneniyor.
-- **"Her dosyada nereye kaydedileceğini sor" açıkken taşıma yapılmaz** — yeri
-  zaten sen seçiyorsun.
-- İlerleme sayacı Chrome'un indirmesini baz alır; taşıma ondan hemen sonra, ayrı
-  gerçekleşir. Yani "49 dosya indi" yazdıktan bir an sonra dosyalar yerine oturur.
-- İndirilenler kökünü tamamen değiştirmek istersen: `chrome://settings/downloads`.
+- **The popup closes when the folder window opens.** Chrome closes a popup that
+  loses focus, and that can't be prevented. The result is written to
+  `chrome.storage.session`; next time you open the extension, the settings panel
+  opens by itself and reports "Save folder updated." A keepAlive runs for the
+  duration of `dirPending` so the worker doesn't die while the window is open —
+  otherwise a selection you took minutes over would vanish silently.
+- **Validation does not create folders.** `checkdir` only looks (does the folder
+  exist, or if not, does its parent?); the actual `makedirs` happens at download
+  or move time. This keeps a mistyped path from littering your disk.
+- **Moves never overwrite**: if the name is taken at the destination, it becomes
+  `name (1).jpg`. Since a file can stay locked for a moment (Chrome, antivirus),
+  the move is retried 4 times.
+- **No move happens while "Ask where to save each file" is on** — you're already
+  choosing the location.
+- The progress counter is based on Chrome's download; the move happens right
+  after, separately. So files settle into place a moment after "49 files
+  downloaded" appears.
+- To change the Downloads root entirely: `chrome://settings/downloads`.
 
-İndirilenler'in mutlak yolunu veren bir API yok; ayar paneli ilk açıldığında
-sessiz bir sonda indirmesi yapılıp yol öğreniliyor ve saklanıyor (klasörün
-İndirilenler altında olup olmadığına da bununla karar veriliyor). Sonda `data:`
-URL'den iniyor — eskiden eklentinin kendi `chrome-extension://` kaynağı
-kullanılıyordu, Chrome onu `downloads` API'siyle indirtmiyor ve `NETWORK_FAILED`
-veriyordu.
+There is no API that returns the absolute path of the Downloads folder. The first
+time the settings panel opens, a silent probe download runs to learn and store it
+(this is also how the extension decides whether a folder sits under Downloads).
+The probe comes from a `data:` URL — the extension's own `chrome-extension://`
+resource used to be used, but Chrome refuses to download that through the
+`downloads` API and returns `NETWORK_FAILED`.
 
-Sonda `saveAs: false` ile iniyor. Bu açıkça yazılmazsa Chrome'un kendi
-"her dosyada nereye kaydedileceğini sor" ayarı devreye giriyor ve sonda için
-**`download.txt` adında bir Kaydet penceresi** açılıyordu (data: URL'de Chrome
-bizim ad önerimizi de yutuyor).
+The probe uses `saveAs: false`. Without stating that explicitly, Chrome's own
+"ask where to save each file" setting takes over and the probe opened a Save
+dialog **named `download.txt`** (with a `data:` URL Chrome also swallows our
+filename suggestion).
 
-## yt-dlp köprüsü (YouTube, Instagram, TikTok, X…)
+## yt-dlp bridge (YouTube, Instagram, TikTok, X…)
 
-Akış siteleri videoyu tek dosya olarak vermez: parçalı DASH/HLS akışı + şifreli
-imza kullanırlar. Bunu eklenti içinde çözmeye çalışmak yt-dlp'yi baştan yazmak
-olurdu ve siteler her değiştiğinde kırılırdı. Bunun yerine eklenti, Chrome'un
-**Native Messaging** köprüsüyle bilgisayardaki yt-dlp'yi çağırıyor.
+Streaming sites don't serve video as a single file: they use segmented DASH/HLS
+streams plus signed URLs. Solving that inside the extension would mean rewriting
+yt-dlp, and it would break every time a site changed. Instead the extension calls
+the yt-dlp on your machine through Chrome's **Native Messaging** bridge.
 
-### Kurulum
+### Setup
 
 ```powershell
-# 1. Eklentiyi yükle, chrome://extensions'tan kimliğini (ID) kopyala
-# 2. Bu klasörde:
-.\setup-native.ps1 -ExtensionId <32-harflik-kimlik>
-# 3. chrome://extensions'ta eklentiyi yenile (⟳)
+# 1. Load the extension, copy its ID from chrome://extensions
+# 2. In this folder:
+.\setup-native.ps1 -ExtensionId <32-char-id>
+# 3. Reload the extension on chrome://extensions (⟳)
 ```
 
-Script; launcher `.bat`'ini, host manifest'ini ve registry anahtarını
-(`HKCU\Software\Google\Chrome\NativeMessagingHosts\com.bozgu.ytdlp`) yazar.
-Yönetici yetkisi gerekmez. Kaldırmak için `.\setup-native.ps1 -Uninstall`.
+The script writes the launcher `.bat`, the host manifest and the registry key
+(`HKCU\Software\Google\Chrome\NativeMessagingHosts\com.bozgu.ytdlp`). No admin
+rights needed. To remove: `.\setup-native.ps1 -Uninstall`.
 
-Ürettiği iki dosya (`native/ytdlp_host.bat`, `native/com.bozgu.ytdlp.json`) depoda
-**yok**, `.gitignore`'dalar: içlerinde bu makineye özel mutlak yollar (Python'un
-yeri) ve eklentinin yerel kimliği var. Paketlenmemiş bir eklentinin kimliği her
-kurulumda değiştiği için hazır gönderilmeleri işe de yaramazdı — köprü yanlış
-kimlikle sessizce bağlanmaz. Bu yüzden kurulumun ilk adımı kimliği kopyalamak.
+The two files it generates (`native/ytdlp_host.bat`,
+`native/com.bozgu.ytdlp.json`) are **not** in the repo — they're gitignored,
+because they contain absolute machine-specific paths (where Python lives) and the
+extension's local ID. Shipping them ready-made wouldn't help anyway: an unpacked
+extension gets a different ID on every install, and the bridge silently fails to
+connect under the wrong ID. That's why step one is copying the ID.
 
-### Bağımlılıklar
+### Dependencies
 
-| Araç | Gerekli mi | Not |
+| Tool | Required? | Note |
 |---|---|---|
-| yt-dlp | **Şart** | `pip install -U yt-dlp`. Eskiyince YouTube kırılır, ayda bir güncelle. |
-| JS motoru (node/deno/bun) | **YouTube için şart** | yt-dlp motorsuz çıkarmayı kullanımdan kaldırdı. Node varsa host onu otomatik seçer (`--js-runtimes node`). |
-| ffmpeg | Önerilir | Olmadan video+ses birleştirilemez → YouTube'da ~720p tavan, "sadece ses" mp3 yerine ham m4a. `winget install Gyan.FFmpeg` |
+| yt-dlp | **Yes** | `pip install -U yt-dlp`. YouTube breaks as it ages — update monthly. |
+| JS runtime (node/deno/bun) | **Yes, for YouTube** | yt-dlp deprecated runtime-less extraction. If Node is present the host selects it automatically (`--js-runtimes node`). |
+| ffmpeg | Recommended | Without it video+audio can't be merged → ~720p ceiling on YouTube, and "audio only" gives raw m4a instead of mp3. `winget install Gyan.FFmpeg` |
 
-Host bu üçünü her çağrıda kendisi arar; ffmpeg PATH'te yoksa winget kurulum
-ağacını da tarar ve bulduğunu `--ffmpeg-location` ile yt-dlp'ye verir. Bu, Chrome
-PATH güncellenmeden önce açıldığında ffmpeg'in "terminalde var, eklentide yok"
-görünmesini önlüyor.
+The host looks all three up on every call; if ffmpeg isn't on PATH it also scans
+the winget install tree and passes what it finds to yt-dlp via
+`--ffmpeg-location`. This prevents ffmpeg from looking "present in the terminal,
+missing in the extension" when Chrome was started before PATH was updated.
 
-**Çerezler varsayılan olarak kapalı.** Chrome 127+ çerez veritabanını App-Bound
-Encryption ile şifreliyor; yt-dlp bunu Windows'ta çözemiyor
-(`Failed to decrypt with DPAPI`). Her indirmede önce denemek sadece gecikme
-üretiyordu. Girişli içerik gerekiyorsa yt-dlp'yi elle `--cookies` ile
-(tarayıcıdan dışa aktarılmış bir cookies.txt ile) çalıştırman gerekir.
+**Cookies are off by default.** Chrome 127+ encrypts its cookie database with
+App-Bound Encryption, and yt-dlp can't decrypt that on Windows
+(`Failed to decrypt with DPAPI`). Trying cookies first on every download only
+added latency. If you need logged-in content, run yt-dlp manually with
+`--cookies` (a cookies.txt exported from the browser).
 
-### Kullanım
+### Usage
 
-Desteklenen bir sitedeyken eklentiyi aç; ızgaranın üstünde videonun **kapak
-görseli, başlığı ve kanal adı** ile birlikte indirme barı çıkar. Kalite seç,
-İndir'e bas — ilerleme çubuğu canlı akar. Dosyalar ⚙ → **kayıt klasörüne**,
-seçilmemişse `İndirilenler\yt-dlp\` altına iner.
+Open the extension on a supported site and a download bar appears above the grid,
+with the video's **thumbnail, title and channel name**. Pick a quality, hit
+Download — the progress bar streams live. Files go to the ⚙ **save folder**, or
+to `Downloads\yt-dlp\` if none is set.
 
-Durum satırında yt-dlp'nin ham çıktısı değil tek bir sade cümle var
-(`İndiriliyor… %13`, `İndirildi`); ham satır ve hedef klasör fare ipucunda.
+The status line shows a single plain sentence rather than yt-dlp's raw output
+(`Downloading… 13%`, `Downloaded`); the raw line and the target folder live in the
+tooltip.
 
-Başlık, kanal ve süre YouTube'da **oEmbed** uç noktasından
-(`youtube.com/oembed`) + `<video>.duration`'dan alınır. Sayfanın kendi `og:` ve
-microformat etiketleri SPA gezinmesinde bir önceki videoda takılı kalıyor, yani
-başlığı da kanalı da yanlış gösteriyordu; kapak zaten URL'deki video kimliğinden
-türetildiği için doğru görünüyor, kafa karıştıran da buydu. Diğer sitelerde `og:`
-etiketleri kullanılmaya devam ediyor. Bar, yalnızca indirmeyi engelleyecek bir eksik varsa
-(yt-dlp veya JS motoru yok) uyarı satırı gösterir.
+On YouTube the title, channel and duration come from the **oEmbed** endpoint
+(`youtube.com/oembed`) plus `<video>.duration`. The page's own `og:` and
+microformat tags get stuck on the previous video during SPA navigation, so they
+reported the wrong title and channel; the thumbnail always looked right because
+it's derived from the video ID in the URL, which is exactly what made the bug
+confusing. Other sites still use `og:` tags. The bar only shows a warning line
+when something would actually block a download (no yt-dlp, no JS runtime).
 
-Köprünün "kurulu mu" cevabı (`probe`) ayrı bir mesaj tipiyle geliyor, indirme
-durumunun içinde değil. Aynı nesnede taşındığı sürümde alan durum nesnesine
-yapışıp kalıyor, popup da canlı gelen her ilerleme mesajını probe cevabı sanıp
-çubuğu güncellemiyordu — çubuk ancak popup kapatılıp açılınca ilerliyordu.
+The bridge's "are you installed?" answer (`probe`) arrives as its own message
+type, not inside the download status. In the version where both rode in the same
+object, the field stuck to the status object and the popup treated every live
+progress message as a probe reply, so the bar never advanced — it only moved when
+the popup was closed and reopened.
 
-Köprü, girişli içerik için Chrome çerezlerini kullanır (`--cookies-from-browser
-chrome`), yani özel Instagram hesapları ve yaş sınırlı YouTube videoları çalışır.
-Çerez okuma başarısız olursa çerezsiz tekrar dener.
+> This tool is for personal use. YouTube's and Instagram's terms of service
+> prohibit downloading content; DRM-protected services (Netflix and the like) are
+> out of scope and technically unsolvable anyway.
 
-> Bu araç kişisel kullanım için. YouTube ve Instagram'ın kullanım şartları
-> içerik indirmeyi yasaklar; DRM korumalı servisler (Netflix vb.) zaten
-> kapsam dışı ve teknik olarak da çözülemez.
+## Files
 
-## Dosyalar
-
-| Dosya | İş |
+| File | Job |
 |---|---|
-| `manifest.json` | İzinler ve giriş noktaları |
-| `background.js` | Service worker: indirme kuyruğu, sağ tık menüleri, ağ dinleyicisi |
-| `scanner.js` | Sayfaya enjekte edilen DOM tarayıcısı |
-| `popup.html/css/js` | Izgara arayüzü, filtreler, seçim |
-| `icons/` | Eklenti simgesi (16/32/48/128) + üreten `make-icon.py` (Pillow) |
-| `native/ytdlp_host.py` | Native messaging host: yt-dlp'yi çağırır, klasör penceresini açar, dosya taşır |
-| `setup-native.ps1` | Köprü kurulumu (bat + host manifest + registry) |
+| `manifest.json` | Permissions and entry points |
+| `background.js` | Service worker: download queue, context menus, network listener |
+| `scanner.js` | DOM scanner injected into the page |
+| `popup.html/css/js` | Grid UI, filters, selection |
+| `icons/` | Extension icons (16/32/48/128) + `make-icon.py` that generates them (Pillow) |
+| `native/ytdlp_host.py` | Native messaging host: calls yt-dlp, opens the folder window, moves files |
+| `setup-native.ps1` | Bridge setup (bat + host manifest + registry) |
 
-## Nasıl çalışıyor
+## How it works
 
-- İndirme için `chrome.downloads.download()` kullanılıyor — Chrome'un kendi indirme
-  motoru. Bu sayede **profildeki çerezler otomatik gönderiliyor** (giriş yapılmış
-  siteler çalışır), CORS'a takılmıyor, duraklat/devam et bedava geliyor.
-- Kuyruk `chrome.storage.session`'da tutuluyor. MV3'te service worker boşta ölür;
-  RAM'deki kuyruk kaybolurdu. `downloads.onChanged` eventi worker'ı uyandırıp
-  bir sonraki dosyayı başlatıyor, yani kuyruk kendi kendine akıyor.
-- Tarayıcı `<img>`, `srcset` (en büyük varyantı seçer), `<picture><source>`,
-  CSS `background-image`, `<video>` + `<source>` + poster, lazy-load
-  (`data-src` / `data-original`), ve medyaya giden `<a href>` bağlantılarını
-  topluyor. `allFrames: true` ile iframe'ler de taranıyor.
-- `webRequest.onResponseStarted` ile ağ trafiği de dinleniyor; DOM'da hiç
-  görünmeyen (JS ile çekilen) medya "ağ" etiketiyle listeye ekleniyor.
-  MV3'te webRequest'in gözlemci tarafı hâlâ çalışıyor, sadece engelleyici
-  (blocking) kısmı kaldırıldı. Yakalananlar `net:{tabId}` altında birikiyor;
-  popup açıksa arka plan ayrıca `netAdded` mesajıyla anında haber veriyor.
-- Canlı liste iki kaynaktan besleniyor: yukarıdaki `netAdded` mesajı ve popup'ın
-  1,2 sn'de bir yaptığı yoklama. Her yoklamada tüm DOM'u taramak pahalı olurdu
-  (özellikle `getComputedStyle` döngüsü), o yüzden `scanner.js` sayfaya bir
-  `MutationObserver` kurup "değişti mi" bayrağı tutuyor; bayrak temizse tarayıcı
-  anında `{unchanged:true}` dönüyor. Bayrak, `executeScript`'in izole dünyasında
-  yaşadığı için çağrılar arasında kalıcı. Sekiz turda bir bayrağa bakılmadan tam
-  tarama yapılıyor (stil kaynaklı arka planlar gibi gözlemcinin kaçırdıkları için).
-- Yeni gelenler listenin **sonuna** ekleniyor, liste yeniden sıralanmıyor:
-  kaydırma konumu, seçim ve çizili kartlar yerinde kalsın diye. Liste 3000 öğede
-  duruyor (sonsuz kaydırmada popup'ın kilitlenmemesi için).
-- İlerleme sayacı da `storage.session`'da ve tek promise zincirinden geçiyor;
-  `_pump` ile `onChanged` aynı anda yazarsa oku-değiştir-yaz araları kaybolurdu.
-  Yalnızca eklentinin başlattığı indirmeler sayılıyor (id'leri kayıtlı), yoksa
-  kullanıcının kendi indirdiği dosyalar sayaca karışırdı.
-- İndirilenler dışına taşınacak dosyalarda "hangi indirme nereye gidecek" eşlemesi
-  de `storage.session`'da (`moves`) ve aynı şekilde tek zincirden geçiyor: worker
-  indirme bitmeden ölebilir, taşıma bilgisi RAM'de durursa kaybolurdu.
-- yt-dlp çalışırken (ve klasör penceresi açıkken) worker 20 sn'de bir
-  `runtime.getPlatformInfo()` çağırıyor.
-  Çağrı sonucu kullanılmıyor; tek işi boşta kalma sayacını sıfırlamak. Worker
-  ölürse native port kapanır, host'un stdin'i EOF alır ve ana döngüsü biter —
-  indirme host tarafında tamamlanır ama ilerleme gelmez, iptal de iş görmez.
+- Downloads go through `chrome.downloads.download()` — Chrome's own download
+  engine. That way **cookies from your profile are sent automatically** (so
+  logged-in sites work), CORS isn't an issue, and pause/resume comes for free.
+- The queue lives in `chrome.storage.session`. Under MV3 the service worker dies
+  when idle, and an in-memory queue would be lost. The `downloads.onChanged`
+  event wakes the worker and starts the next file, so the queue flows by itself.
+- The scanner collects `<img>`, `srcset` (picking the largest variant),
+  `<picture><source>`, CSS `background-image`, `<video>` + `<source>` + poster,
+  lazy-load attributes (`data-src` / `data-original`), and `<a href>` links that
+  point at media. `allFrames: true` means iframes are scanned too.
+- Network traffic is watched via `webRequest.onResponseStarted`, so media that
+  never appears in the DOM (fetched by JS) is added to the list tagged "network".
+  Under MV3 the observational side of webRequest still works — only the blocking
+  side was removed. Captures accumulate under `net:{tabId}`; if the popup is open,
+  the background also announces them immediately with a `netAdded` message.
+- The live list is fed from two sources: that `netAdded` message, and a poll the
+  popup runs every 1.2 s. Scanning the whole DOM on every poll would be expensive
+  (the `getComputedStyle` loop especially), so `scanner.js` installs a
+  `MutationObserver` on the page and keeps a "did anything change" flag; if the
+  flag is clean the scanner returns `{unchanged:true}` immediately. The flag
+  survives between calls because it lives in `executeScript`'s isolated world.
+  Every eighth round a full scan runs regardless of the flag, to catch what the
+  observer misses (such as style-driven backgrounds).
+- New items are appended to the **end** of the list and the list is never
+  re-sorted, so scroll position, selection and already-rendered cards stay put.
+  The list stops at 3000 items (so infinite scroll doesn't lock up the popup).
+- The progress counter also lives in `storage.session` and passes through a single
+  promise chain; if `_pump` and `onChanged` wrote at the same time,
+  read-modify-write updates would be lost. Only downloads the extension started
+  are counted (their IDs are recorded), otherwise the user's own downloads would
+  pollute the counter.
+- For files headed outside Downloads, the "which download goes where" mapping is
+  in `storage.session` too (`moves`) and passes through the same single chain: the
+  worker can die before a download finishes, and move information held in memory
+  would be lost.
+- While yt-dlp is running (and while the folder window is open) the worker calls
+  `runtime.getPlatformInfo()` every 20 s. The result is unused; its only job is to
+  reset the idle timer. If the worker dies, the native port closes, the host's
+  stdin hits EOF and its main loop ends — the download completes on the host side,
+  but no progress arrives and cancelling does nothing.
 
-## Bilinen sınırlar
+## Known limitations
 
-- **`blob:` videolar ızgaradan indirilemez** — bunlar için üstteki yt-dlp barını
-  kullan. `<video>` etiketinde gördüğün `blob:` URL, sayfanın belleğinde yaşayan
-  bir referanstır; eklenti bağlamından erişilemez. Popup bu tür videoları sayıp
-  uyarı gösteriyor.
-- **DRM'li içerik (Widevine)** şifreli geldiği için teknik olarak da çözülemez.
-- **Önizleme çıkmayabilir.** Hotlink koruması olan siteler eklenti bağlamından gelen
-  istekleri reddeder; küçük resim yerine uzantı etiketi görürsün. Dosyanın kendisi
-  yine de inebilir, çünkü indirme `chrome.downloads` üzerinden ve çerezlerle gider.
-- **`chrome://`, Web Store ve PDF görüntüleyici sayfaları taranamaz** — Chrome
-  eklenti enjeksiyonuna kapatır.
-- **8000'den fazla element olan sayfalarda CSS arka plan taraması atlanır**
-  (`getComputedStyle` çok yavaşlar). `scanner.js` içinde bu eşiği değiştirebilirsin.
+- **`blob:` videos can't be downloaded from the grid** — use the yt-dlp bar above
+  for those. The `blob:` URL you see in a `<video>` tag is a reference living in
+  the page's memory; it isn't reachable from the extension's context. The popup
+  counts such videos and shows a warning.
+- **DRM-protected content (Widevine)** arrives encrypted and is technically
+  unsolvable.
+- **Thumbnails may not render.** Sites with hotlink protection reject requests
+  coming from the extension context, so you see a file-extension label instead of
+  a preview. The file itself can still download, because that goes through
+  `chrome.downloads` with your cookies.
+- **`chrome://`, the Web Store and the PDF viewer can't be scanned** — Chrome
+  blocks extension injection there.
+- **CSS background scanning is skipped on pages with more than 8000 elements**
+  (`getComputedStyle` gets very slow). You can change that threshold in
+  `scanner.js`.
 
-## Sonraki adımlar (isteğe bağlı)
+## Next steps (optional)
 
-- Referer başlığı ekleme: hotlink korumalı siteler için `declarativeNetRequest`
-  `modifyHeaders` kuralı (MV3'te `webRequest` blocking yerine bunu kullanacaksın)
-- Sonsuz kaydırmalı galerilerde sayfayı otomatik aşağı kaydırma (tarama artık
-  canlı; eksik olan tek şey kaydırmayı kullanıcı yerine yapmak)
-- yt-dlp barına oynatma listesi desteği (`--no-playlist` bayrağını kaldırmak)
+- Referer header injection: a `declarativeNetRequest` `modifyHeaders` rule for
+  hotlink-protected sites (MV3 requires this instead of blocking `webRequest`)
+- Auto-scrolling infinite-scroll galleries (scanning is live now; the only missing
+  piece is doing the scrolling for the user)
+- Playlist support in the yt-dlp bar (dropping the `--no-playlist` flag)
 
-## Kapsam ve sorumluluk
+## Scope and responsibility
 
-Bu araç **kişisel kullanım** için yazıldı. YouTube, Instagram gibi servislerin
-kullanım şartları içerik indirmeyi yasaklar; neyi indirdiğinden ve telif
-durumundan kullanan sorumludur. DRM korumalı içerik (Widevine) kapsam dışı —
-şifreli geldiği için teknik olarak da çözülemez, aracın böyle bir yeteneği yok.
+This tool was written for **personal use**. The terms of service of services like
+YouTube and Instagram prohibit downloading content; what you download and its
+copyright status are your responsibility. DRM-protected content (Widevine) is out
+of scope — it arrives encrypted, is technically unsolvable, and the tool has no
+such capability.
 
-## Lisans
+## License
 
-MIT — bkz. [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
