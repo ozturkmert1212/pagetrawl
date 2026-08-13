@@ -13,7 +13,7 @@ const DEFAULTS = {
 
 // Seçilen klasör İndirilenler dışındaysa Chrome oraya yazamaz; dosya önce
 // İndirilenler'in altındaki bu ara klasöre iniyor, sonra köprü taşıyor.
-const STAGE_DIR = 'medya-indirici-gecici';
+const STAGE_DIR = 'pagetrawl-gecici';
 
 const VIDEO_EXT = /\.(mp4|webm|mov|mkv|avi|m4v|ogv|m3u8|mpd)(\?|#|$)/i;
 
@@ -355,14 +355,14 @@ chrome.tabs.onRemoved.addListener(clearNet);
 // göstermek ve seçilen klasörün İndirilenler altında olup olmadığına karar
 // vermek. Küçük bir sonda dosyası bir kez sessizce indirilip yolu okunuyor.
 
-const PROBE_NAME = 'medya-indirici-klasor-secimi.txt';
+const PROBE_NAME = 'pagetrawl-klasor-secimi.txt';
 
 // Sonda dosyasının kaynağı. `chrome-extension://` URL'si NETWORK_FAILED veriyor
 // (Chrome kendi eklenti kaynaklarını downloads API'siyle indirtmiyor), o yüzden
 // birinci tercih data: URL. Bir Chrome sürümü onu da kısıtlarsa web erişimine
 // açık probe.txt'ye düşüyoruz.
 const PROBE_URLS = [
-  'data:text/plain;charset=utf-8,medya-indirici%20klasor%20sondasi',
+  'data:text/plain;charset=utf-8,pagetrawl%20klasor%20sondasi',
   chrome.runtime.getURL('probe.txt')
 ];
 

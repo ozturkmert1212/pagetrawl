@@ -767,7 +767,7 @@ function defaultNote(info) {
   return (
     'Fotoğraflar ve videolar buraya iner. Burası İndirilenler dışında olduğu için ' +
     'fotoğrafları köprü taşıyor — köprü kurulu değilse İndirilenler\\' +
-    (info.stage || 'medya-indirici-gecici') + ' altında kalırlar.'
+    (info.stage || 'pagetrawl-gecici') + ' altında kalırlar.'
   );
 }
 

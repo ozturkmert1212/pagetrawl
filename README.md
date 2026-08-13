@@ -1,4 +1,8 @@
-# Medya İndirici
+# PageTrawl
+
+> Trawl the open page for images and videos, filter them, download in bulk.
+> Chrome extension (Manifest V3, no build step) with a local yt-dlp bridge for
+> streaming sites. Documentation below is in Turkish.
 
 Açık sekmedeki fotoğraf ve videoları tarayıp listeleyen, filtreleyip toplu indiren
 kişisel kullanımlık bir Chrome eklentisi (Manifest V3, saf JS — build adımı yok).
@@ -64,7 +68,7 @@ olsun diye köprüyü ikisi için de kullanıyoruz:
 | Fotoğrafı İndirilenler dışına taşıma | Köprü (`move`) |
 
 Yani hedef İndirilenler'in **altındaysa** fotoğraf doğrudan oraya iner (köprüye
-hiç ihtiyaç yok). **Dışındaysa** fotoğraf önce `İndirilenler\medya-indirici-gecici\`
+hiç ihtiyaç yok). **Dışındaysa** fotoğraf önce `İndirilenler\pagetrawl-gecici\`
 altına iner, indirme biter bitmez köprü onu asıl yerine taşır ve boşalan ara
 klasörü siler. Köprü kurulu değilse dosyalar o ara klasörde kalır ve ayar
 panelinde kırmızı uyarı çıkar — sessizce kaybolmazlar.

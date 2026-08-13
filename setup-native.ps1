@@ -37,7 +37,7 @@ if (-not $ExtensionId) {
   Write-Host ""
   Write-Host "Eksik parametre: -ExtensionId" -ForegroundColor Yellow
   Write-Host "  1. chrome://extensions adresini ac"
-  Write-Host "  2. 'Medya Indirici' kartindaki ID satirini kopyala"
+  Write-Host "  2. 'PageTrawl' kartindaki ID satirini kopyala"
   Write-Host "     (32 harflik, ornek: abcdefghijklmnopabcdefghijklmnop)"
   Write-Host "  3. .\setup-native.ps1 -ExtensionId <o-kimlik>"
   Write-Host ""
@@ -87,7 +87,7 @@ Write-Host "Yazildi : $batPath"
 
 $manifest = [ordered]@{
   name            = $HostName
-  description     = 'yt-dlp koprusu (Medya Indirici)'
+  description     = 'yt-dlp koprusu (PageTrawl)'
   path            = $batPath
   type            = 'stdio'
   allowed_origins = @("chrome-extension://$ExtensionId/")
