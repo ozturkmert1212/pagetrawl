@@ -45,6 +45,10 @@ After changing code, hit the reload (⟳) button on `chrome://extensions`. For
   closed, the same number shows as a **badge on the extension icon** — the queue
   keeps working in the background
 - **Right-click** any image or video → "Download this media" (single file, fast path)
+- Two flags in the header switch the interface language between **Turkish and
+  English**; the choice is remembered. Chrome's own `chrome.i18n` follows the
+  browser language and can't be switched at runtime, so the strings live in
+  `i18n.js` instead
 
 Files are saved as `Downloads/{site-name}/{file-name}.{ext}`.
 
@@ -195,6 +199,7 @@ the popup was closed and reopened.
 | `background.js` | Service worker: download queue, context menus, network listener |
 | `scanner.js` | DOM scanner injected into the page |
 | `popup.html/css/js` | Grid UI, filters, selection |
+| `i18n.js` | Turkish/English strings for the popup + the `t()` helper |
 | `icons/` | Extension icons (16/32/48/128) + `make-icon.py` that generates them (Pillow) |
 | `native/ytdlp_host.py` | Native messaging host: calls yt-dlp, opens the folder window, moves files |
 | `setup-native.ps1` | Bridge setup (bat + host manifest + registry) |

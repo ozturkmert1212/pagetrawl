@@ -212,16 +212,23 @@ function absorb(items) {
 function showNotice() {
   const msgs = [];
   if (blobSeen) {
-    msgs.push(`${blobSeen} adet blob: video atlandı — bunlar parçalı akış (HLS/DASH) ve eklentiden indirilemez.`);
+    msgs.push(t('notice.blob', { n: blobSeen }));
   }
   if (capped) {
-    msgs.push(`Liste ${MAX_ITEMS} öğede doldu; yeni gelenler eklenmiyor. Seçtiklerini indirip popup'ı yeniden aç.`);
+    msgs.push(t('notice.capped', { max: MAX_ITEMS }));
   }
   notice.textContent = msgs.join(' ');
   notice.classList.toggle('hidden', !msgs.length);
 }
 
 let scanning = false;
+let scanError = '';   // sayfa taranamadıysa hata metni — dil değişince tazelenir
+
+/** "Bu sayfa taranamıyor" ekranı; dil değişiminde de aynı yerden çiziliyor. */
+function drawScanError() {
+  grid.innerHTML =
+    `<div class="empty">${t('grid.unscannable')}<br><span class="small">${scanError}</span></div>`;
+}
 
 /**
  * Sayfayı tarar ve yenileri listeye katar.
@@ -243,10 +250,12 @@ async function refresh(full = false) {
     } catch (e) {
       // Gezinme sırasında araya girmiş olabiliriz; ilk taramada değilsek sus.
       if (full && !byUrl.size) {
-        grid.innerHTML = `<div class="empty">Bu sayfa taranamıyor.<br><span class="small">${e.message}</span></div>`;
+        scanError = e.message;
+        drawScanError();
       }
       return;
     }
+    scanError = '';
 
     const found = [];
     let blobs = 0;
@@ -399,20 +408,20 @@ function buildCard(m) {
       // reddedebilir; önizleme çıkmasa da dosya indirilebilir olabilir.
       const ph = document.createElement('div');
       ph.className = 'ph';
-      ph.textContent = ext(m.url) || 'resim';
+      ph.textContent = ext(m.url) || t('tag.image');
       img.replaceWith(ph);
     };
     card.appendChild(img);
   } else {
     const ph = document.createElement('div');
     ph.className = 'ph video';
-    ph.textContent = '▶ ' + (ext(m.url) || 'video');
+    ph.textContent = '▶ ' + (ext(m.url) || t('tag.video'));
     card.appendChild(ph);
   }
 
   const tag = document.createElement('span');
   tag.className = 'tag';
-  tag.textContent = m.net ? 'ağ' : m.kind === 'video' ? 'video' : ext(m.url) || 'resim';
+  tag.textContent = m.net ? t('tag.net') : m.kind === 'video' ? t('tag.video') : ext(m.url) || t('tag.image');
   card.appendChild(tag);
 
   const tick = document.createElement('span');
@@ -422,7 +431,7 @@ function buildCard(m) {
   if (done.has(m.url)) {
     const badge = document.createElement('span');
     badge.className = 'done-badge';
-    badge.textContent = 'indirildi';
+    badge.textContent = t('badge.done');
     card.appendChild(badge);
   }
 
@@ -436,7 +445,7 @@ function buildCard(m) {
 
   // Aynı videonun başka kaliteleri varsa: sağ altta açılır ok, altında liste.
   if (m._vars) {
-    label.textContent += ` · ${m._vars.length} kalite`;
+    label.textContent += ' · ' + t('card.qualities', { n: m._vars.length });
     meta.appendChild(buildChevron(m._vars.length));
   }
   card.appendChild(meta);
@@ -450,7 +459,7 @@ function buildChevron(n) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'chev';
-  btn.title = `${n} kalite — aç/kapat`;
+  btn.title = t('chev.title', { n });
   // Metin oku (⌄) yazı tipine göre kayıyor; çizgi olarak koyuyoruz.
   btn.innerHTML =
     '<svg viewBox="0 0 12 8" aria-hidden="true"><path d="M1.5 1.5 6 6l4.5-4.5" ' +
@@ -473,7 +482,7 @@ function buildVariants(m) {
 
     const name = document.createElement('span');
     name.className = 'vname';
-    name.textContent = qLabel(v) + (v === m ? ' · en iyi' : '');
+    name.textContent = qLabel(v) + (v === m ? ' · ' + t('var.best') : '');
 
     const size = document.createElement('span');
     size.className = 'vsize';
@@ -517,7 +526,7 @@ function render(keep = false) {
   drawn = 0;
 
   if (!listCache.length) {
-    grid.innerHTML = '<div class="empty">Bu filtrelerle eşleşen medya yok.</div>';
+    grid.innerHTML = `<div class="empty">${t('grid.noMatch')}</div>`;
     updateCounts();
     return;
   }
@@ -641,8 +650,8 @@ function updateCounts() {
   const vids = all.length - imgs;
   const total = listCache.length;
   const seen = drawn >= total ? `${total}` : `${drawn}/${total}`;
-  $('#stats').textContent = `${seen} gösteriliyor · ${imgs} resim, ${vids} video`;
-  $('#selCount').textContent = `${selected.size} seçili`;
+  $('#stats').textContent = t('stats', { seen, imgs, vids });
+  $('#selCount').textContent = t('selCount', { n: selected.size });
   $('#download').disabled = selected.size === 0;
 }
 
@@ -725,7 +734,7 @@ function applyTileSize(px) {
   // Sadece genişlik; yükseklik CSS'te aspect-ratio ile genişlikten türüyor.
   document.documentElement.style.setProperty('--tile-w', px + 'px');
   const cols = Math.max(1, Math.floor((756 + 8) / (px + 8)));
-  $('#sizeLabel').textContent = cols + ' sütun';
+  $('#sizeLabel').textContent = t('size.cols', { n: cols });
 }
 
 $('#size').addEventListener('input', (e) => {
@@ -754,7 +763,7 @@ async function showFolder() {
   const info = await chrome.runtime.sendMessage({ type: 'getFolderInfo' });
   const box = $('#folder');
   box.value = info?.set ? info.abs : '';
-  box.placeholder = info?.root || 'İndirilenler klasörü';
+  box.placeholder = info?.root || t('folder.rootPh');
 
   // Bir önceki "Gözat" denemesinin sonucu varsa onu göster: klasör penceresi
   // popup'ı kapattığı için o an gösterilememişti.
@@ -762,13 +771,9 @@ async function showFolder() {
 }
 
 function defaultNote(info) {
-  if (!info?.set) return 'Fotoğraflar İndirilenler köküne, videolar İndirilenler\\yt-dlp altına iner.';
-  if (!info.outside) return 'Fotoğraflar ve videolar buraya iner.';
-  return (
-    'Fotoğraflar ve videolar buraya iner. Burası İndirilenler dışında olduğu için ' +
-    'fotoğrafları köprü taşıyor — köprü kurulu değilse İndirilenler\\' +
-    (info.stage || 'pagetrawl-gecici') + ' altında kalırlar.'
-  );
+  if (!info?.set) return t('folder.note.unset');
+  if (!info.outside) return t('folder.note.inside');
+  return t('folder.note.outside', { stage: info.stage || 'pagetrawl-gecici' });
 }
 
 function setFolderNote(text, bad = false) {
@@ -779,7 +784,7 @@ function setFolderNote(text, bad = false) {
 // Klasörü seçtiren pencereyi köprü açıyor: Chrome'un kendi Kaydet penceresi
 // yalnızca İndirilenler altını kabul ediyordu, köprününki her yeri seçebiliyor.
 $('#browse').addEventListener('click', () => {
-  setFolderNote('Klasör penceresi açılıyor… Popup kapanacak, bu normal — seçtiğin klasör kaydedilir.');
+  setFolderNote(t('folder.opening'));
   chrome.runtime.sendMessage({ type: 'pickFolder' });
 });
 
@@ -791,7 +796,7 @@ $('#folderReset').addEventListener('click', () => {
 // anında açıyor — yanlış yazılmış bir yol diske çöp klasör bırakmasın.
 $('#folder').addEventListener('change', (e) => {
   const path = e.target.value.trim();
-  setFolderNote(path ? 'Klasör doğrulanıyor…' : '');
+  setFolderNote(path ? t('folder.checking') : '');
   chrome.runtime.sendMessage({ type: 'setFolder', path });
 });
 
@@ -800,7 +805,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 
   if (msg.note) setFolderNote(msg.note, !!msg.bad);          // ör. taşıma hatası
   else if (msg.error) setFolderNote(msg.error, true);
-  else if (msg.canceled) setFolderNote('İptal edildi.');
+  else if (msg.canceled) setFolderNote(t('folder.canceled'));
   else if (msg.path) { $('#folder').value = msg.path; showFolder(); }
   else { $('#folder').value = ''; showFolder(); }
 });
@@ -822,7 +827,12 @@ $('#saveSettings').addEventListener('click', async () => {
 // Kuyruk service worker'da işliyor; popup kapansa da sürüyor. Bu yüzden durumu
 // açılışta bir kez soruyoruz, sonrası canlı mesajla geliyor.
 
+// Dil değişince aynı durumu yeni dilde yeniden çizebilmek için son gelen
+// değerleri saklıyoruz; aksi hâlde açık bir ilerleme çubuğu eski dilde kalırdı.
+let lastProg = null;
+
 function renderDl(p) {
+  lastProg = p;
   const box = $('#dlProg');
   if (!p || !p.total) {
     box.classList.add('hidden');
@@ -838,10 +848,10 @@ function renderDl(p) {
   fill.classList.toggle('err', !running && !!p.failed);
 
   $('#dlText').textContent = running
-    ? `İndiriliyor… ${fin}/${p.total}`
+    ? t('dl.running', { fin, total: p.total })
     : p.failed
-      ? `${p.done} indi · ${p.failed} başarısız`
-      : `${p.done} dosya indi`;
+      ? t('dl.mixed', { done: p.done, failed: p.failed })
+      : t('dl.done', { done: p.done });
 
   box.classList.remove('hidden');
 }
@@ -863,7 +873,7 @@ $('#download').addEventListener('click', async () => {
 
   const btn = $('#download');
   btn.disabled = true;
-  btn.textContent = 'Kuyruğa alınıyor…';
+  btn.textContent = t('btn.queueing');
 
   const res = await chrome.runtime.sendMessage({ type: 'download', items, host });
 
@@ -874,10 +884,10 @@ $('#download').addEventListener('click', async () => {
     selected.clear();
     persist();
     render(true);
-    btn.textContent = `${res.count} dosya kuyrukta`;
-    setTimeout(() => (btn.textContent = 'Seçilenleri indir'), 1600);
+    btn.textContent = t('btn.queued', { n: res.count });
+    setTimeout(() => (btn.textContent = t('footer.download')), 1600);
   } else {
-    btn.textContent = 'Hata: ' + (res?.error || 'bilinmiyor');
+    btn.textContent = t('btn.error', { msg: res?.error || t('err.unknown') });
   }
 });
 
@@ -915,8 +925,11 @@ let ytBusy = false;   // ekranda sürmekte olan bir yt-dlp indirmesi var mı
  * Extracting URL…") DEĞİL, tek bir sade cümle duruyor; ham satır yalnızca fare
  * ipucunda. Yüzdeyi zaten çubuk gösteriyor.
  */
+let lastYtStatus = null;
+
 function renderYtStatus(s) {
   if (!s) return;
+  lastYtStatus = s;
 
   // Service worker indirme sırasında öldüyse durum "çalışıyor" hâlinde donar ve
   // İndir düğmesi sonsuza kadar kapalı kalırdı. Zaman damgası eskimişse
@@ -925,10 +938,10 @@ function renderYtStatus(s) {
   const running = !!s.running && !stale;
 
   let text;
-  if (stale) text = 'Durum kayboldu (köprü bağlantısı koptu). Dosya inmiş olabilir — kayıt klasörüne bak.';
+  if (stale) text = t('yt.stale');
   else if (s.error) text = s.error;
-  else if (running) text = s.percent ? `İndiriliyor… %${Math.round(s.percent)}` : 'İndiriliyor…';
-  else if (s.percent === 100) text = 'İndirildi';
+  else if (running) text = s.percent ? t('yt.downloadingPct', { pct: Math.round(s.percent) }) : t('yt.downloading');
+  else if (s.percent === 100) text = t('yt.downloaded');
   else text = s.line || '';   // iptal gibi tek seferlik bilgiler
 
   ytBusy = running;
@@ -1042,7 +1055,7 @@ async function initYt() {
   }
 
   $('#ytbar').classList.remove('hidden');
-  $('#ytTitle').textContent = trimTitle(tab.title, site) || site + ' videosu';
+  $('#ytTitle').textContent = trimTitle(tab.title, site) || t('yt.videoOf', { site });
   $('#ytSub').textContent = site;
 
   renderYtStatus(await chrome.runtime.sendMessage({ type: 'getYtStatus' }));
@@ -1117,8 +1130,8 @@ function setThumb(src) {
 function renderProbe(p) {
   if (!p || ytBusy) return;   // sürmekte olan indirmenin satırını ezmesin
   let warn = '';
-  if (!p.ytdlp) warn = 'yt-dlp bulunamadı — kurulum gerekiyor.';
-  else if (!p.js) warn = 'JS motoru yok (deno/node/bun) — YouTube başarısız olabilir.';
+  if (!p.ytdlp) warn = t('probe.noYtdlp');
+  else if (!p.js) warn = t('probe.noJs');
   if (!warn) return;
 
   $('#ytLine').textContent = warn;
@@ -1132,7 +1145,7 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 $('#ytGo').addEventListener('click', () => {
-  renderYtStatus({ running: true, percent: 0, line: 'Başlatılıyor…' });
+  renderYtStatus({ running: true, percent: 0, line: t('yt.starting') });
   chrome.runtime.sendMessage({
     type: 'ytdlp',
     action: 'download',
@@ -1145,10 +1158,51 @@ $('#ytCancel').addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'ytdlp', action: 'cancel' });
 });
 
+// --- dil -------------------------------------------------------------------
+// Sabit metinler HTML'den (data-i18n), geri kalan her şey yeniden çizilerek
+// tazeleniyor. Kart etiketleri, sayaçlar ve açık durum satırı kartların içinde
+// duruyor; sadece applyStaticI18n çağırmak onları eski dilde bırakırdı.
+
+function applyLang(lang) {
+  setLang(lang);
+
+  document
+    .querySelectorAll('#langs .flag')
+    .forEach((b) => b.classList.toggle('on', b.dataset.lang === getLang()));
+
+  applyStaticI18n();
+  applyTileSize(+$('#size').value);   // "n sütun"
+
+  if (scanError) drawScanError();
+  else render(true);                 // kart etiketleri + sayaçlar
+
+  showNotice();
+  renderDl(lastProg);
+  if (lastYtStatus) renderYtStatus(lastYtStatus);
+  if (!$('#settings').classList.contains('hidden')) showFolder();
+  if (tab) initYt();                 // video kartındaki yedek başlık
+}
+
+$('#langs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.flag');
+  if (!btn || btn.dataset.lang === getLang()) return;
+  applyLang(btn.dataset.lang);
+  saveSetting({ lang: getLang() });
+});
+
 // --- başlat ----------------------------------------------------------------
 
 (async () => {
   const { settings } = await chrome.storage.local.get('settings');
+
+  // Dil her şeyden önce: aşağıdaki ilk çizimler zaten doğru dilde olsun,
+  // arayüz bir an Türkçe görünüp sonra İngilizceye atlamasın.
+  setLang(settings?.lang || DEFAULT_LANG);
+  document
+    .querySelectorAll('#langs .flag')
+    .forEach((b) => b.classList.toggle('on', b.dataset.lang === getLang()));
+  applyStaticI18n();
+
   if (settings) {
     $('#maxConcurrent').value = settings.maxConcurrent ?? 4;
     $('#saveAs').checked = !!settings.saveAs;

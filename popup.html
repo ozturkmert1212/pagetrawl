@@ -8,25 +8,59 @@
   <header>
     <div class="row">
       <div class="chips" id="kindFilter">
-        <button class="chip active" data-kind="all">Tümü</button>
-        <button class="chip" data-kind="image">Resim</button>
-        <button class="chip" data-kind="video">Video</button>
+        <button class="chip active" data-kind="all" data-i18n="chip.all">Tümü</button>
+        <button class="chip" data-kind="image" data-i18n="chip.image">Resim</button>
+        <button class="chip" data-kind="video" data-i18n="chip.video">Video</button>
       </div>
-      <input type="search" id="search" placeholder="URL içinde ara…">
+      <input type="search" id="search" data-i18n-ph="search.ph" placeholder="URL içinde ara…">
       <label class="minw">
-        min genişlik
+        <span data-i18n="filter.minWidth">min genişlik</span>
         <input type="number" id="minWidth" value="0" min="0" step="50">
       </label>
-      <button class="icon" id="gear" title="Ayarlar">⚙</button>
+
+      <!-- Dil seçimi. Bayrak emojisi (🇹🇷/🇺🇸) Windows'ta bayrak olarak
+           çizilmiyor, iki harf olarak görünüyor; o yüzden gömülü SVG. -->
+      <div class="langs" id="langs">
+        <button class="flag" data-lang="tr" data-i18n-title="lang.tr" title="Türkçe">
+          <svg viewBox="0 0 24 16" aria-hidden="true">
+            <rect width="24" height="16" fill="#E30A17"/>
+            <circle cx="9" cy="8" r="4" fill="#fff"/>
+            <circle cx="10.5" cy="8" r="3.2" fill="#E30A17"/>
+            <polygon fill="#fff" points="15,5.6 15.59,7.19 17.28,7.26 15.95,8.31 16.41,9.94 15,9 13.59,9.94 14.05,8.31 12.72,7.26 14.41,7.19"/>
+          </svg>
+        </button>
+        <button class="flag" data-lang="en" data-i18n-title="lang.en" title="İngilizce">
+          <svg viewBox="0 0 24 16" aria-hidden="true">
+            <rect width="24" height="16" fill="#fff"/>
+            <g fill="#B22234">
+              <rect y="0" width="24" height="1.23"/>
+              <rect y="2.46" width="24" height="1.23"/>
+              <rect y="4.92" width="24" height="1.23"/>
+              <rect y="7.38" width="24" height="1.23"/>
+              <rect y="9.85" width="24" height="1.23"/>
+              <rect y="12.31" width="24" height="1.23"/>
+              <rect y="14.77" width="24" height="1.23"/>
+            </g>
+            <rect width="10" height="8.61" fill="#3C3B6E"/>
+            <g fill="#fff">
+              <circle cx="2" cy="2" r="0.6"/><circle cx="5" cy="2" r="0.6"/><circle cx="8" cy="2" r="0.6"/>
+              <circle cx="3.5" cy="4.3" r="0.6"/><circle cx="6.5" cy="4.3" r="0.6"/>
+              <circle cx="2" cy="6.6" r="0.6"/><circle cx="5" cy="6.6" r="0.6"/><circle cx="8" cy="6.6" r="0.6"/>
+            </g>
+          </svg>
+        </button>
+      </div>
+
+      <button class="icon" id="gear" data-i18n-title="gear.title" title="Ayarlar">⚙</button>
     </div>
 
     <div class="row sub">
-      <button class="link" id="selAll">Tümünü seç</button>
-      <button class="link" id="selNone">Temizle</button>
-      <button class="link" id="selInvert">Tersle</button>
+      <button class="link" id="selAll" data-i18n="sel.all">Tümünü seç</button>
+      <button class="link" id="selNone" data-i18n="sel.none">Temizle</button>
+      <button class="link" id="selInvert" data-i18n="sel.invert">Tersle</button>
       <span class="sizer">
         <input type="range" id="size" min="140" max="340" step="10" value="200"
-               title="Kart boyutu">
+               data-i18n-title="size.title" title="Kart boyutu">
         <span id="sizeLabel" class="muted small"></span>
       </span>
       <span class="grow"></span>
@@ -40,13 +74,13 @@
         <div class="yt-sub muted small" id="ytSub"></div>
       </div>
       <select id="ytMode">
-        <option value="best">En iyi kalite</option>
-        <option value="1080">1080p'ye kadar</option>
-        <option value="720">720p'ye kadar</option>
-        <option value="audio">Sadece ses (mp3)</option>
+        <option value="best" data-i18n="yt.mode.best">En iyi kalite</option>
+        <option value="1080" data-i18n="yt.mode.1080">1080p'ye kadar</option>
+        <option value="720" data-i18n="yt.mode.720">720p'ye kadar</option>
+        <option value="audio" data-i18n="yt.mode.audio">Sadece ses (mp3)</option>
       </select>
-      <button class="primary small" id="ytGo">İndir</button>
-      <button class="link hidden" id="ytCancel">İptal</button>
+      <button class="primary small" id="ytGo" data-i18n="yt.go">İndir</button>
+      <button class="link hidden" id="ytCancel" data-i18n="yt.cancel">İptal</button>
       <div class="yt-status hidden" id="ytStatus">
         <div class="bar"><i id="ytBarFill"></i></div>
         <span id="ytLine" class="muted small"></span>
@@ -55,23 +89,23 @@
 
     <div id="settings" class="settings hidden">
       <label>
-        Aynı anda indirme
+        <span data-i18n="settings.concurrent">Aynı anda indirme</span>
         <input type="number" id="maxConcurrent" min="1" max="10" value="4">
       </label>
       <label class="wide">
-        Kayıt klasörü (fotoğraf ve video — istediğin yer olabilir)
+        <span data-i18n="settings.folder">Kayıt klasörü (fotoğraf ve video — istediğin yer olabilir)</span>
         <span class="folder-row">
-          <input type="text" id="folder" placeholder="Yol okunuyor…" spellcheck="false">
-          <button class="ghost" id="browse">Gözat…</button>
-          <button class="link" id="folderReset">Sıfırla</button>
+          <input type="text" id="folder" data-i18n-ph="folder.ph" placeholder="Yol okunuyor…" spellcheck="false">
+          <button class="ghost" id="browse" data-i18n="settings.browse">Gözat…</button>
+          <button class="link" id="folderReset" data-i18n="settings.reset">Sıfırla</button>
         </span>
       </label>
       <label class="check">
         <input type="checkbox" id="saveAs">
-        Her dosyada nereye kaydedileceğini sor
+        <span data-i18n="settings.saveAs">Her dosyada nereye kaydedileceğini sor</span>
       </label>
       <p id="folderNote" class="muted small"></p>
-      <button class="primary small" id="saveSettings">Kaydet</button>
+      <button class="primary small" id="saveSettings" data-i18n="settings.save">Kaydet</button>
     </div>
   </header>
 
@@ -86,9 +120,10 @@
       <span id="dlText" class="muted small"></span>
     </span>
     <span class="grow"></span>
-    <button class="primary" id="download" disabled>Seçilenleri indir</button>
+    <button class="primary" id="download" data-i18n="footer.download" disabled>Seçilenleri indir</button>
   </footer>
 
+  <script src="i18n.js"></script>
   <script src="scanner.js"></script>
   <script src="popup.js"></script>
 </body>
