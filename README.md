@@ -17,6 +17,12 @@ kişisel kullanımlık bir Chrome eklentisi (Manifest V3, saf JS — build adım
 Kodu değiştirdikten sonra `chrome://extensions` sayfasındaki yenile (⟳) düğmesine
 basman yeterli. `popup.js`/`popup.css` değişikliklerinde popup'ı kapatıp açmak da gerekir.
 
+> **Depoyu klonladıysan bu kadarı yetmez.** Yukarıdaki adımlarla sayfa tarama,
+> ızgara ve toplu indirme çalışır; ama akış siteleri (YouTube, Instagram…) ve
+> İndirilenler dışına kaydetme için **yt-dlp köprüsünü ayrıca kurman gerekir** —
+> köprünün dosyaları makineye özel oldukları için depoda yok. Aşağıdaki
+> "yt-dlp köprüsü" bölümüne bak.
+
 ## Kullanım
 
 - **İkona tıkla** → sayfa taranır, bulunan medya ızgarada listelenir
@@ -122,6 +128,12 @@ olurdu ve siteler her değiştiğinde kırılırdı. Bunun yerine eklenti, Chrom
 Script; launcher `.bat`'ini, host manifest'ini ve registry anahtarını
 (`HKCU\Software\Google\Chrome\NativeMessagingHosts\com.bozgu.ytdlp`) yazar.
 Yönetici yetkisi gerekmez. Kaldırmak için `.\setup-native.ps1 -Uninstall`.
+
+Ürettiği iki dosya (`native/ytdlp_host.bat`, `native/com.bozgu.ytdlp.json`) depoda
+**yok**, `.gitignore`'dalar: içlerinde bu makineye özel mutlak yollar (Python'un
+yeri) ve eklentinin yerel kimliği var. Paketlenmemiş bir eklentinin kimliği her
+kurulumda değiştiği için hazır gönderilmeleri işe de yaramazdı — köprü yanlış
+kimlikle sessizce bağlanmaz. Bu yüzden kurulumun ilk adımı kimliği kopyalamak.
 
 ### Bağımlılıklar
 
