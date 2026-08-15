@@ -11,6 +11,9 @@
         <button class="chip active" data-kind="all" data-i18n="chip.all">Tümü</button>
         <button class="chip" data-kind="image" data-i18n="chip.image">Resim</button>
         <button class="chip" data-kind="video" data-i18n="chip.video">Video</button>
+        <!-- Ağdan yakalananlar: DOM'da hiç görünmeyen, JS ile çekilen medya.
+             Gezme sırasında gelenlerin çoğu bu yoldan düşüyor. -->
+        <button class="chip" data-kind="net" data-i18n="chip.net" data-i18n-title="chip.netTitle">Ağ</button>
       </div>
       <input type="search" id="search" data-i18n-ph="search.ph" placeholder="URL içinde ara…">
       <label class="minw">
@@ -51,6 +54,11 @@
         </button>
       </div>
 
+      <!-- Yan panelde aç. Chrome açılır pencereyi odak kaybında kapatıyor ve bu
+           engellenemiyor; yan panel o kurala tabi değil. Panelin içindeyken bu
+           düğme gizleniyor. -->
+      <button class="icon" id="pin" data-i18n-title="pin.title" title="Yan panelde aç">📌</button>
+      <button class="icon" id="histBtn" data-i18n-title="hist.gear" title="İndirme geçmişi">🕘</button>
       <button class="icon" id="gear" data-i18n-title="gear.title" title="Ayarlar">⚙</button>
     </div>
 
@@ -58,6 +66,11 @@
       <button class="link" id="selAll" data-i18n="sel.all">Tümünü seç</button>
       <button class="link" id="selNone" data-i18n="sel.none">Temizle</button>
       <button class="link" id="selInvert" data-i18n="sel.invert">Tersle</button>
+      <!-- İki gezme modu: aşağı kaydırma (sonsuz akış) ve sağ ok tuşu
+           (slayt gösterisi / lightbox). Aynı anda yalnız biri çalışıyor. -->
+      <button class="link" id="sweep" data-i18n="sweep.start" data-i18n-title="sweep.title">Sayfayı gez</button>
+      <button class="link" id="sweepRight" data-i18n="sweep.right" data-i18n-title="sweep.rightTitle">Sağa gez</button>
+      <span id="sweepInfo" class="muted small"></span>
       <span class="sizer">
         <input type="range" id="size" min="140" max="340" step="10" value="200"
                data-i18n-title="size.title" title="Kart boyutu">
@@ -68,7 +81,9 @@
     </div>
 
     <div id="ytbar" class="ytbar hidden">
-      <div class="yt-cover" id="ytCover"><img id="ytThumb" alt=""></div>
+      <!-- referrerpolicy: bazı CDN'ler yabancı referer'lı isteği reddediyor ama
+           referer'sız olanı geçiriyor. Kapağın hiç çıkmamasının sık sebebi bu. -->
+      <div class="yt-cover" id="ytCover"><img id="ytThumb" alt="" referrerpolicy="no-referrer"></div>
       <div class="yt-info">
         <div class="yt-name" id="ytTitle">Video</div>
         <div class="yt-sub muted small" id="ytSub"></div>
@@ -130,6 +145,35 @@
     <div class="view-foot">
       <button class="primary" id="saveSettings" data-i18n="settings.save">Kaydet</button>
       <span id="saved" class="muted small"></span>
+    </div>
+  </section>
+
+  <!-- İndirme geçmişi. Ayarlarla aynı kayan katman düzeni; ikisi aynı anda
+       açılmıyor. Kayıtlar sayfaya göre gruplu: asıl soru "bu neredendi". -->
+  <section id="historyView" class="view">
+    <div class="view-bar">
+      <button class="icon" id="histBack" data-i18n-title="settings.back" title="Geri">←</button>
+      <strong data-i18n="hist.title">İndirme geçmişi</strong>
+      <input type="search" id="histSearch" data-i18n-ph="hist.search.ph" placeholder="Ara…">
+      <span id="histCount" class="muted small"></span>
+    </div>
+
+    <div class="view-body" id="histBody"></div>
+
+    <div class="view-foot" id="histFoot">
+      <button class="danger" id="histDelete" data-i18n="del.button" disabled>Seçilen dosyaları sil</button>
+      <button class="ghost" id="histClear" data-i18n="hist.clear">Geçmişi temizle</button>
+      <span id="histNote" class="muted small"></span>
+    </div>
+
+    <!-- Silme geri alınamaz, o yüzden iki adım. Tarayıcının confirm()'ü
+         popup'ta güvenilmez (engellenebiliyor, popup'ı kapatabiliyor), onun
+         yerine yerinde bir onay barı. -->
+    <div class="view-foot confirm hidden" id="histConfirm">
+      <span id="histConfirmText" class="warn small"></span>
+      <span class="grow"></span>
+      <button class="ghost" id="histNo" data-i18n="del.no">Vazgeç</button>
+      <button class="danger" id="histYes" data-i18n="del.yes">Evet, sil</button>
     </div>
   </section>
 

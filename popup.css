@@ -29,6 +29,24 @@
 
 * { box-sizing: border-box; }
 
+/* Yan panel: genişliği kullanıcı sürükleyerek belirliyor ve 780px'ten çok daha
+   dar olabiliyor. Açılır penceredeki sabit ölçüler orada işe yaramaz. */
+html.panel body {
+  width: 100%;
+  height: 100vh;
+}
+
+/* Başlıktaki kontroller tek satıra sığmıyor; dar panelde alt alta düşsünler. */
+html.panel .row { flex-wrap: wrap; }
+html.panel .row.sub { row-gap: 6px; }
+html.panel #search { min-width: 90px; flex: 1 1 90px; }
+html.panel .sizer { flex: 1 1 120px; }
+html.panel .sizer input[type="range"] { width: 100%; min-width: 60px; }
+html.panel .minw { flex: 0 1 auto; }
+html.panel footer { flex-wrap: wrap; row-gap: 6px; }
+html.panel .view-bar { flex-wrap: wrap; row-gap: 6px; }
+html.panel .view-foot { flex-wrap: wrap; row-gap: 6px; }
+
 /* Popup'ta kesin yükseklik şart: sadece max-height verilirse flex, main'i
    küçültemez (indefinite height) ve ızgara scrollbar üretmeden taşar. */
 body {
@@ -86,6 +104,113 @@ body {
   background: var(--panel);
   flex: none;
 }
+
+/* --- indirme geçmişi ---
+   Kayıtlar sayfaya göre gruplu: bir galeriden inen 40 dosya tek başlığın
+   altında duruyor, yoksa liste aynı sayfa adını 40 kez tekrarlardı. */
+.view-bar #histSearch {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.hist-group + .hist-group { margin-top: 14px; }
+
+.hist-page {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  padding: 4px 2px 5px;
+  cursor: pointer;
+}
+
+.hist-page:hover .hist-ptitle { text-decoration: underline; }
+.hist-page:disabled { cursor: default; }
+.hist-page:disabled:hover .hist-ptitle { text-decoration: none; }
+
+.hist-ptitle {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hist-phost { color: var(--muted); font-size: 12px; flex: none; }
+.hist-pn { color: var(--muted); font-size: 12px; margin-left: auto; flex: none; }
+
+/* Onay kutusu satırın kardeşi, içinde değil: <button> içine <input> koymak
+   geçersiz HTML ve tıklamalar birbirini yer. */
+.hist-row { display: flex; align-items: center; gap: 7px; }
+.hist-row input[type="checkbox"] { flex: none; margin: 0; cursor: pointer; accent-color: var(--accent); }
+.hist-row input[type="checkbox"]:disabled { cursor: default; opacity: 0.4; }
+
+.hist-file {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 2px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.hist-file:hover { background: var(--panel); }
+
+/* Silinmiş kayıt listede kalıyor — "bu dosya şu sayfadan inmişti ve sildim"
+   bilgisi kaydın kendisinden değerli. Ama tıklanacak bir dosya kalmadı. */
+.hist-row.gone .hist-file { cursor: default; opacity: 0.55; }
+.hist-row.gone .hist-file:hover { background: none; }
+.hist-row.gone .hist-name { text-decoration: line-through; }
+
+.hist-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-when { color: var(--muted); margin-left: auto; flex: none; }
+
+.hist-state { flex: none; font-size: 11px; }
+.hist-state.done { color: #16a34a; }
+.hist-state.failed { color: #dc2626; }
+.hist-state.running { color: var(--muted); }
+.hist-state.deleted { color: var(--muted); font-style: italic; }
+
+/* "akış" etiketi: bu kart seçilince chrome.downloads değil yt-dlp çalışıyor.
+   Ötekilerden ayrı görünmesi şart, çünkü tek gerçekten işe yarayan seçenek o. */
+.tag.stream { background: var(--accent); color: var(--accent-text); }
+
+/* Yıkıcı eylem: renk tek başına yetmez (renk körlüğü), çerçeve de kırmızı. */
+.danger {
+  border: 1px solid #dc2626;
+  background: none;
+  color: #dc2626;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.danger:hover:not(:disabled) { background: #dc2626; color: #fff; }
+.danger:disabled { opacity: 0.4; cursor: default; }
+
+.view-foot.confirm { background: #dc26261a; border-top-color: #dc2626; }
+.warn { color: #dc2626; }
 
 .opt-row { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
 .opt-row + .opt-row { margin-top: 16px; }
@@ -201,6 +326,34 @@ input[type="number"] { width: 72px; }
   font: inherit;
 }
 .link:hover { text-decoration: underline; }
+/* Bir gezme sürerken öteki mod kapanıyor. */
+.link:disabled { color: var(--muted); opacity: 0.5; cursor: default; }
+.link:disabled:hover { text-decoration: none; }
+
+/* Gezme sürerken düğme "Durdur"a dönüyor. Renk tek başına yetmiyor (kırmızı/
+   mavi ayrımı renk körlüğünde kaybolur); yanıp sönen nokta ikinci işaret. */
+#sweep.on,
+#sweepRight.on { color: #dc2626; font-weight: 600; }
+
+#sweep.on::before,
+#sweepRight.on::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse { 50% { opacity: 0.25; } }
+
+@media (prefers-reduced-motion: reduce) {
+  #sweep.on::before,
+  #sweepRight.on::before { animation: none; }
+}
 
 .ytbar {
   margin-top: 8px;

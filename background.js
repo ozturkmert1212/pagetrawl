@@ -7,6 +7,9 @@
 // Popup'la ortak çeviri tablosu. Worker'ın da kendi metinleri var (sağ tık
 // menüsü, köprü hataları) ve bunlar popup'a hazır metin olarak gidiyor.
 importScripts('i18n.js');
+// Tarayıcı fonksiyonu: gezme worker'da çalıştığı için taramayı da o yapıyor.
+// scanner.js tek bir fonksiyon bildirimi, yan etkisi yok.
+importScripts('scanner.js');
 
 const DEFAULTS = {
   maxConcurrent: 4,
@@ -181,8 +184,161 @@ async function paintProg(prog) {
   chrome.runtime.sendMessage({ type: 'dlStatus', prog }).catch(() => {});
 }
 
+// --- indirme geçmişi -------------------------------------------------------
+// "Bu dosya hangi sayfadan indi" sorusunun cevabı. Chrome'un kendi indirme
+// listesi dosyayı ve kaynak URL'sini biliyor ama ONU BULDUĞUMUZ SAYFAYI
+// bilmiyor: bir galeriden 40 fotoğraf indirdikten sonra "bunlar neredendi"
+// sorusunun tarayıcıda cevabı yok. Kaydı biz tutuyoruz.
+//
+// storage.session değil `local`: geçmişin tarayıcı kapanınca silinmesi
+// anlamsız olurdu. Kuyruk ve sayaç oturumluk çünkü onlar "şu an akan iş";
+// geçmiş ise arşiv.
+
+const HISTORY_MAX = 500;
+
+async function getHistory() {
+  const { history } = await chrome.storage.local.get('history');
+  return Array.isArray(history) ? history : [];
+}
+
+// Geçmiş de iki yerden yazılıyor: _pump kaydı açarken, onChanged sonucu
+// işaretlerken. progChain/moveChain ile aynı gerekçe — araya giren yazmalar
+// kaybolmasın.
+let histChain = Promise.resolve();
+function updateHistory(mutate) {
+  histChain = histChain
+    .then(async () => {
+      const history = await getHistory();
+      const next = mutate(history);
+      await chrome.storage.local.set({ history: (next || history).slice(0, HISTORY_MAX) });
+    })
+    .catch((e) => console.error('[history]', e));
+  return histChain;
+}
+
+/** İndirme başlarken kaydı açar; sonucu sonra `markHistory` yazıyor. */
+function addHistory(id, job) {
+  return updateHistory((history) => {
+    history.unshift({
+      id,
+      url: job.url,
+      // Chrome'a verdiğimiz göreli ad. Ara klasöre inen dosyalarda gerçek yer
+      // `move`; kullanıcıya onu gösteriyoruz.
+      name: job.filename,
+      move: job.move || '',
+      kind: job.kind || '',
+      page: job.page || null,
+      at: Date.now(),
+      state: 'running'
+    });
+    return history;
+  });
+}
+
+function markHistory(id, state) {
+  return updateHistory((history) => {
+    const e = history.find((h) => h.id === id);
+    if (e) e.state = state;
+    return history;
+  });
+}
+
+// --- indirilen dosyaları silme ---------------------------------------------
+// Geçmişten seçilen kayıtların dosyalarını DİSKTEN siler. İki ayrı yol var,
+// çünkü dosyanın nerede olduğuna göre silebilecek olan değişiyor:
+//
+//   İndirilenler altında  → chrome.downloads.removeFile (Chrome kendi kaydından)
+//   köprüyle dışarı taşınmış → köprü (Chrome'un kaydı artık yanlış yeri gösteriyor)
+//
+// Bu, eklentinin geri alınamaz tek işlemi. Onayı popup alıyor; buraya gelen
+// çağrı "kullanıcı emin" demektir.
+
+let deleteWaiter = null;   // köprüden 'deleted' cevabını bekleyen çözücü
+
+/**
+ * Silmeyi köprüye yaptırır. Tek mesajda toplu gidiyor: dosya başına ayrı mesaj
+ * atsak cevapları eşleştirmek için protokole istek kimliği eklemek gerekirdi.
+ */
+function bridgeDelete(paths, roots) {
+  return new Promise((resolve) => {
+    if (deleteWaiter) return resolve(null);   // aynı anda tek parti
+
+    const finish = (r) => {
+      clearTimeout(timer);
+      deleteWaiter = null;
+      syncKeepAlive();
+      resolve(r);
+    };
+    // Cevap hiç gelmezse (köprü öldü, kilitli dosyada takıldı) sonsuza kadar
+    // beklemiyoruz; kullanıcı "silindi mi silinmedi mi" bilmeden kalmasın.
+    const timer = setTimeout(() => finish(null), 30000);
+
+    deleteWaiter = finish;
+    syncKeepAlive();
+    if (!nativeSend({ action: 'delete', paths, roots })) finish(null);
+  });
+}
+
+/** ids: geçmiş kayıtlarının indirme kimlikleri. -> {gone, failed[]} */
+async function deleteFiles(ids) {
+  const wanted = (await getHistory()).filter(
+    (h) => ids.includes(h.id) && h.state !== 'deleted'
+  );
+
+  const gone = [];
+  const failed = [];
+
+  for (const h of wanted.filter((x) => !x.move)) {
+    try {
+      await chrome.downloads.removeFile(h.id);
+      gone.push(h.id);
+    } catch (e) {
+      // Chrome dosya zaten yoksa da hata veriyor. Kullanıcı açısından sonuç
+      // aynı — dosya gitmiş — o yüzden bunu başarı sayıyoruz.
+      const msg = e?.message || '';
+      if (/already deleted|does not exist|missing/i.test(msg)) gone.push(h.id);
+      else failed.push({ id: h.id, code: 'oserr', error: msg });
+    }
+  }
+
+  const staged = wanted.filter((x) => x.move);
+  if (staged.length) {
+    // Köprüye izin verdiğimiz sınır: kayıt klasörü ve İndirilenler. Host bunun
+    // dışındaki hiçbir yola dokunmuyor.
+    const plan = await folderPlan();
+    const roots = [plan.abs, plan.root].filter(Boolean);
+    const res = await bridgeDelete(staged.map((h) => h.move), roots);
+
+    if (!res) {
+      for (const h of staged) failed.push({ id: h.id, code: 'nobridge' });
+    } else {
+      const ok = new Set(res.done || []);
+      for (const h of staged) {
+        if (ok.has(h.move)) {
+          gone.push(h.id);
+          continue;
+        }
+        const f = (res.failed || []).find((x) => x.path === h.move);
+        failed.push({ id: h.id, code: f?.code || 'oserr', error: f?.error || '' });
+      }
+    }
+  }
+
+  // Kayıt silinmiyor, `deleted` işaretleniyor: "bu dosya şu sayfadan inmişti ve
+  // sonra sildim" bilgisi kaydın kendisinden daha değerli.
+  if (gone.length) {
+    const g = new Set(gone);
+    await updateHistory((history) => {
+      for (const h of history) if (g.has(h.id)) h.state = 'deleted';
+      return history;
+    });
+  }
+
+  return { gone: gone.length, failed };
+}
+
 /** items: [{url, kind}] */
-async function enqueue(items, pageHost, pageTitle = '') {
+async function enqueue(items, pageHost, pageTitle = '', pageUrl = '') {
   const { template, saveAs } = await getSettings();
   const plan = await folderPlan();
   // Hedef İndirilenler dışındaysa Chrome oraya yazamaz: ara klasöre indirip
@@ -191,14 +347,22 @@ async function enqueue(items, pageHost, pageTitle = '') {
   const staged = plan.outside && !saveAs;
   const prefix = staged ? STAGE_DIR + '/' : plan.rel ? plan.rel + '/' : '';
 
+  // Sayfa bilgisi işle birlikte kuyruğa giriyor: indirme başladığında (belki
+  // dakikalar sonra, belki worker ölüp dirildikten sonra) hangi sayfadan
+  // geldiğini başka türlü bilemezdik.
+  const page = { url: pageUrl || '', title: pageTitle || '', host: pageHost || '' };
+
   const jobs = items
     .filter((it) => it && it.url)
     .map((it) => {
-      const rel = buildFilename(it.url, pageHost, template, it.kind || guessKind(it.url), pageTitle);
+      const kind = it.kind || guessKind(it.url);
+      const rel = buildFilename(it.url, pageHost, template, kind, pageTitle);
       return {
         url: it.url,
         filename: prefix + rel,
-        move: staged ? joinAbs(plan.abs, rel) : ''
+        move: staged ? joinAbs(plan.abs, rel) : '',
+        kind,
+        page
       };
     });
 
@@ -244,6 +408,7 @@ async function _pump() {
         saveAs: !!saveAs
       });
       await updateProg((p) => { p.ids[id] = 1; });
+      await addHistory(id, job);
       if (job.move) await rememberMove(id, job.move);
     } catch (e) {
       // Geçersiz dosya adı, ölü URL vs. Kuyruğu tıkamasın, atla.
@@ -268,6 +433,10 @@ chrome.downloads.onChanged.addListener((delta) => {
     if (state === 'complete') p.done++;
     else p.failed++;
   });
+
+  // Geçmişte yalnızca bizim açtığımız kayıtlar var; kullanıcının kendi
+  // indirmesinin kimliği hiçbir kayda denk gelmiyor ve sessizce düşüyor.
+  markHistory(delta.id, state === 'complete' ? 'done' : 'failed');
 
   // Ara klasöre inen dosyayı asıl yerine köprü taşıyor.
   if (state === 'complete') finishMove(delta.id);
@@ -314,7 +483,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (tab?.url) host = new URL(tab.url).hostname;
   } catch {}
 
-  await enqueue([{ url, kind: info.mediaType === 'video' ? 'video' : guessKind(url) }], host, tab?.title || '');
+  await enqueue(
+    [{ url, kind: info.mediaType === 'video' ? 'video' : guessKind(url) }],
+    host,
+    tab?.title || '',
+    tab?.url || ''
+  );
 });
 
 // --- ağdan medya yakalama --------------------------------------------------
@@ -382,13 +556,38 @@ chrome.webRequest.onResponseStarted.addListener(
 async function clearNet(tabId) {
   netBuffer.delete(tabId);
   // Popup'ın seçim/indirildi hafızası da o sayfaya aitti; yeni sayfada geçersiz.
-  await chrome.storage.session.remove(['net:' + tabId, 'sel:' + tabId, 'done:' + tabId]);
+  await chrome.storage.session.remove([
+    'net:' + tabId,
+    'sel:' + tabId,
+    'done:' + tabId,
+    'swept:' + tabId
+  ]);
 }
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.url) clearNet(tabId); // yeni sayfaya geçildi, listeyi sıfırla
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (!changeInfo.url) return;
+
+  // Gezilen sekmede adres değişimi GEZİNME DEĞİL: slayt gösterileri her görsel
+  // için pushState yapıyor. Burada silmek, gezmenin bulduğu her şeyi anında yok
+  // ediyordu — üstelik `netBuffer` 600 ms'lik debounce'unu doldurmadan
+  // silindiği için ağdan yakalananlar popup'a hiç ulaşmıyordu. Kullanıcının
+  // gördüğü belirti buydu: sağa gezerken liste boş kalıyor, ama popup'ı kapatıp
+  // açınca aradakiler "ağ" etiketiyle beliriyordu.
+  const s = await getSweep();
+  if (s && s.running && s.tabId === tabId) return;
+
+  clearNet(tabId);
 });
-chrome.tabs.onRemoved.addListener(clearNet);
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  // Sekme kapandıysa gezecek bir şey de kalmadı.
+  const s = await getSweep();
+  if (s && s.tabId === tabId) {
+    clearTimeout(sweepTimer);
+    sweepTimer = null;
+    await setSweep(null);
+  }
+  clearNet(tabId);
+});
 
 // --- İndirilenler klasörünün yeri ------------------------------------------
 // Mutlak yolu veren bir API yok, ama iki şey için lazım: ayarda gerçek yolu
@@ -640,7 +839,7 @@ let movesInFlight = 0;    // köprüye verilip cevabı beklenen taşıma sayıs�
 
 /** Worker'ı yalnızca gerçekten bekleyen bir iş varken ayakta tutuyoruz. */
 function syncKeepAlive() {
-  keepAlive(ytRunning || dirPending || movesInFlight > 0);
+  keepAlive(ytRunning || dirPending || movesInFlight > 0 || !!deleteWaiter || sweepRunning);
 }
 
 function keepAlive(on) {
@@ -660,6 +859,75 @@ async function pushStatus(patch) {
   const next = { ...(ytStatus || {}), ...patch, at: Date.now() };
   await chrome.storage.session.set({ ytStatus: next });
   chrome.runtime.sendMessage({ type: 'ytStatus', status: next }).catch(() => {});
+}
+
+// --- yt-dlp kuyruğu --------------------------------------------------------
+// Köprü aynı anda TEK indirme yapıyor (host'ta `_current` tek bir süreç). Bir
+// sayfada beş ayrı DASH akışı olabildiği için sıralamayı eklenti tarafında
+// yapıyoruz: biri bitince sıradaki gönderiliyor.
+//
+// Kuyruk `storage.session`'da, indirme kuyruğuyla aynı gerekçe: worker arada
+// ölebilir ve RAM'deki liste kaybolurdu.
+
+async function getYtQueue() {
+  const { ytQueue } = await chrome.storage.session.get('ytQueue');
+  return Array.isArray(ytQueue) ? ytQueue : [];
+}
+
+/** Tek bir indirmeyi başlatır. `left`: bu işten SONRA kuyrukta kalan sayı. */
+function ytStart(job, left = 0) {
+  ytRunning = true;
+  keepAlive(true);
+  langReady.then(() =>
+    pushStatus({
+      running: true,
+      percent: 0,
+      line: t('yt.starting'),
+      dir: '',
+      error: null,
+      left
+    })
+  );
+
+  // Klasörü çözmek ilk seferde sonda indirmesi gerektirebiliyor (mutlak yol
+  // öğrenme), o yüzden asenkron: yanıtı beklemeden veriyoruz.
+  ytOutdir().then((outdir) =>
+    nativeSend({
+      action: 'download',
+      url: job.url,
+      mode: job.mode,
+      referer: job.referer || '',
+      outdir
+    })
+  );
+}
+
+async function ytEnqueue(urls, mode, referer) {
+  const jobs = urls.filter(Boolean).map((url) => ({ url, mode, referer }));
+  if (!jobs.length) return 0;
+
+  const q = (await getYtQueue()).concat(jobs);
+  await chrome.storage.session.set({ ytQueue: q });
+
+  // Boştaysak hemen başlıyoruz; değilse sıradaki `done` mesajında alınacak.
+  if (!ytRunning) await ytNext();
+  else await pushStatus({ left: q.length });
+  return jobs.length;
+}
+
+/** Kuyruktan sıradakini alıp başlatır; kuyruk boşsa hiçbir şey yapmaz. */
+async function ytNext() {
+  const q = await getYtQueue();
+  const job = q.shift();
+  await chrome.storage.session.set({ ytQueue: q });
+  if (!job) return false;
+  ytStart(job, q.length);
+  return true;
+}
+
+/** İptal kuyruğu da boşaltıyor: yoksa sıradaki hemen başlar ve şaşırtır. */
+async function ytClearQueue() {
+  await chrome.storage.session.remove('ytQueue');
 }
 
 function nativeConnect() {
@@ -707,6 +975,10 @@ function nativeConnect() {
       syncKeepAlive();
       // Taşıma başarısızsa dosya ara klasörde kaldı — sessizce yutmuyoruz.
       if (!m.ok) noteFolder('wk.moveFailed', { err: hostText(m) || '?' }, true);
+    } else if (m.type === 'deleted') {
+      // Bekleyen yoksa bu geç kalmış bir cevap (zaman aşımından sonra geldi);
+      // sessizce düşüyor, çünkü sonucu soracak kimse kalmadı.
+      if (deleteWaiter) deleteWaiter(m);
     } else if (m.type === 'progress') {
       pushStatus({ running: true, percent: m.percent, line: m.line, error: null });
     } else if (m.type === 'log') {
@@ -736,6 +1008,11 @@ function nativeConnect() {
           error: hostText(m) || t('wk.dlFailed', { code: m.code })
         });
       }
+
+      // Kuyrukta bekleyen varsa sıradakine geç. İptalde geçmiyoruz: kullanıcı
+      // "dur" dedi, beşincisini başlatmak onu şaşırtırdı — `ytClearQueue`
+      // kuyruğu zaten boşaltmış oluyor.
+      if (!m.canceled) ytNext();
     }
   });
 
@@ -749,6 +1026,9 @@ function nativeConnect() {
     ytRunning = false;
     dirPending = false;
     movesInFlight = 0;
+    // Bekleyen silme partisi varsa 30 sn'lik zaman aşımını beklemeden serbest
+    // bırakıyoruz: cevap gelecek bir yer kalmadı, popup boşuna donmasın.
+    if (deleteWaiter) deleteWaiter(null);
     keepAlive(false);
 
     await langReady;
@@ -787,35 +1067,353 @@ function nativeSend(payload) {
   }
 }
 
+// --- sayfayı gez -----------------------------------------------------------
+// Gezme SERVICE WORKER'da çalışıyor. v1.20'ye kadar döngü popup'taydı ve
+// popup kapanınca gezme de biterdi; oysa sonsuz bir galeriyi gezmek dakikalar
+// sürüyor ve kullanıcının o süre boyunca popup'ı açık tutması saçmaydı.
+//
+// Worker MV3'te boşta ölüyor, o yüzden gezme sürerken keepAlive açık —
+// yt-dlp indirmesi ve klasör penceresiyle aynı mekanizma.
+//
+// Tarama da burada: popup kapalıyken kimse taramıyor olsaydı gezme boşuna
+// kaydırırdı. Bulunanlar `swept:<tabId>` altında birikiyor, popup açıksa
+// anında haber veriliyor.
+
+function sweepStep(cmd) {
+  // Sağa ok tuşuna basılmış gibi yapar. Kaydırmayla ilgisi olmadığı için
+  // kap seçmeden, en başta dönüyor.
+  if (cmd.mode === 'key') {
+    // Odaktaki öğeye gönderiyoruz: lightbox'lar ve slayt gösterileri açılınca
+    // odağı kendi kabına alıyor ve dinleyiciyi oraya kuruyor. Odak yoksa
+    // body'den gönderilen olay zaten document ve window'a kadar kabarıyor.
+    const el =
+      document.activeElement && document.activeElement !== document.body
+        ? document.activeElement
+        : document.body;
+    if (!el) return { blocked: true };
+
+    const init = {
+      key: 'ArrowRight',
+      code: 'ArrowRight',
+      keyCode: 39,
+      which: 39,
+      bubbles: true,
+      cancelable: true,
+      composed: true,   // shadow DOM'daki galerilere de ulaşsın
+      view: window
+    };
+
+    for (const type of ['keydown', 'keyup']) {
+      const ev = new KeyboardEvent(type, init);
+      // keyCode/which standart KeyboardEventInit'te yok; Chrome kabul ediyor
+      // ama garanti değil. Eski siteler hâlâ e.keyCode'a baktığı için
+      // tutmadıysa elle tanımlıyoruz.
+      if (ev.keyCode !== 39) {
+        Object.defineProperty(ev, 'keyCode', { get: () => 39 });
+        Object.defineProperty(ev, 'which', { get: () => 39 });
+      }
+      el.dispatchEvent(ev);
+    }
+    return { pressed: true };
+  }
+
+  const doc = document.scrollingElement || document.documentElement;
+
+  // Çoğu sayfa pencereyi kaydırıyor ama bazı galeriler kendi kabını kaydırıyor;
+  // o zaman window.scrollBy hiçbir şey yapmaz ve gezme ilk adımda "bitti" sanır.
+  const pick = () => {
+    if (doc && doc.scrollHeight > doc.clientHeight + 40) return doc;
+    let best = null;
+    let bestGain = 0;
+    for (const el of document.querySelectorAll('div, main, section, ul, ol')) {
+      const gain = el.scrollHeight - el.clientHeight;
+      if (gain <= 40 || el.clientHeight < 200) continue;
+      const ov = getComputedStyle(el).overflowY;
+      if (ov !== 'auto' && ov !== 'scroll') continue;
+      if (gain > bestGain) {
+        best = el;
+        bestGain = gain;
+      }
+    }
+    return best || doc;
+  };
+
+  const el = pick();
+  if (!el) return { blocked: true };
+
+  const state = () => ({
+    y: el.scrollTop,
+    height: el.scrollHeight,
+    atBottom: el.scrollTop + el.clientHeight >= el.scrollHeight - 4
+  });
+
+  if (cmd.mode === 'probe') return state();
+
+  if (cmd.mode === 'restore') {
+    // `scrollTo` + 'instant': sayfanın CSS'inde `scroll-behavior: smooth`
+    // varsa düz atama animasyona girer ve konum okuması yanlış çıkar.
+    el.scrollTo({ top: cmd.to, behavior: 'instant' });
+    return state();
+  }
+
+  const before = el.scrollTop;
+  // Tam ekran boyu yerine biraz azı: lazy yükleyicilerin eşiği ekranın hemen
+  // altında, örtüşme olmazsa aradaki görseller hiç tetiklenmeden geçilebiliyor.
+  el.scrollTo({ top: before + Math.max(200, el.clientHeight * 0.85), behavior: 'instant' });
+
+  const s = state();
+  s.moved = s.y > before;
+  return s;
+}
+
+const SWEEP_MS = 700;
+const SWEEP_IDLE = 5;
+const SWEEP_IDLE_RIGHT = 7;
+const SWEEP_MAX = 400;
+const SWEPT_CAP = 3000;
+
+let sweepTimer = null;
+let sweepRunning = false;   // keepAlive için RAM'deki ayna
+
+async function getSweep() {
+  const { sweep } = await chrome.storage.session.get('sweep');
+  return sweep || null;
+}
+
+async function setSweep(s) {
+  if (s) await chrome.storage.session.set({ sweep: s });
+  else await chrome.storage.session.remove('sweep');
+  sweepRunning = !!(s && s.running);
+  syncKeepAlive();
+  chrome.runtime.sendMessage({ type: 'sweepStatus', sweep: s || null }).catch(() => {});
+}
+
+/** Sayfaya enjekte edilen tarayıcıyı bir kez çalıştırır. */
+async function scanTab(tabId, full) {
+  const frames = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    func: collectMedia,
+    args: [full]
+  });
+
+  const items = [];
+  for (const f of frames) {
+    const r = f.result;
+    if (!r || r.unchanged) continue;
+    items.push(...(r.items || []));
+  }
+  return items;
+}
+
+/**
+ * Gezme sırasında bulunanlar burada birikiyor. Popup kapalıyken bunları
+ * tutacak başka bir yer yok: popup'ın `byUrl` havuzu onunla birlikte yok
+ * oluyor, sayfanın DOM'u ise yalnızca O ANKİ slaydı gösteriyor.
+ */
+async function addSwept(tabId, items) {
+  if (!items.length) return;
+  const key = 'swept:' + tabId;
+  const stored = (await chrome.storage.session.get(key))[key] || [];
+  const seen = new Set(stored.map((i) => i.url));
+
+  const added = [];
+  for (const it of items) {
+    if (!it || !it.url || seen.has(it.url)) continue;
+    seen.add(it.url);
+    stored.push(it);
+    added.push(it);
+  }
+  if (!added.length) return;
+
+  await chrome.storage.session.set({ [key]: stored.slice(-SWEPT_CAP) });
+  // Popup açıksa anında görsün. Kapalıysa alıcı yok, hatayı yutuyoruz —
+  // açılışta zaten depodan çekiyor.
+  chrome.runtime.sendMessage({ type: 'sweptAdded', tabId, items: added }).catch(() => {});
+}
+
+async function sweepStart(tabId, mode) {
+  const cur = await getSweep();
+  if (cur && cur.running) return { ok: false };
+
+  let probe = null;
+  try {
+    [{ result: probe }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: sweepStep,
+      args: [{ mode: 'probe' }]
+    });
+  } catch {
+    probe = null;
+  }
+  if (!probe || probe.blocked) {
+    await setSweep({ running: false, tabId, mode, reason: 'sweep.blocked', found: 0 });
+    return { ok: false };
+  }
+
+  // Gezmeye başlarken sayfada zaten duran medyayı da alalım; yoksa ilk slayt
+  // yalnızca popup açıksa listeye girerdi.
+  const base = (await chrome.storage.session.get('swept:' + tabId))['swept:' + tabId] || [];
+  try {
+    await addSwept(tabId, await scanTab(tabId, true));
+  } catch {
+    // Tarama başarısızsa gezmeyi yine de başlatıyoruz; adımlar deneyecek.
+  }
+
+  await setSweep({
+    running: true,
+    tabId,
+    mode,
+    steps: 0,
+    idle: 0,
+    home: probe.y || 0,
+    height: probe.height || 0,
+    base: base.length,
+    found: 0,
+    reason: '',
+    at: Date.now()
+  });
+
+  sweepTimer = setTimeout(sweepTick, SWEEP_MS);
+  return { ok: true };
+}
+
+async function sweepStop(reason, restore = true) {
+  const s = await getSweep();
+  clearTimeout(sweepTimer);
+  sweepTimer = null;
+  if (!s || !s.running) return;
+
+  // Kullanıcıyı bıraktığı yere geri koy. Sağa gezmede yok: sayfayı biz
+  // kaydırmadık, tuşa bastık — aynı sayıda sola basmak sayfanın o tuşa ne
+  // yaptığını bildiğimizi varsaymak olurdu.
+  // `restore=false`: sekme başka bir SİTEYE geçti. Eski konuma koymaya
+  // çalışmak, artık bambaşka olan bir sayfayı rastgele kaydırmak demek.
+  if (s.mode === 'down' && restore) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: s.tabId },
+        func: sweepStep,
+        args: [{ mode: 'restore', to: s.home }]
+      });
+    } catch {
+      // Sekme kapandı ya da başka sayfaya gitti — geri koyacak yer yok.
+    }
+  }
+
+  await setSweep({ ...s, running: false, reason: reason || 'sweep.stopped', at: Date.now() });
+}
+
+async function sweepTick() {
+  const s = await getSweep();
+  if (!s || !s.running) return;
+
+  const right = s.mode === 'right';
+
+  if (++s.steps > SWEEP_MAX) return sweepStop('sweep.limit');
+
+  let r;
+  try {
+    [{ result: r }] = await chrome.scripting.executeScript({
+      target: { tabId: s.tabId },
+      func: sweepStep,
+      args: [{ mode: right ? 'key' : 'step' }]
+    });
+  } catch {
+    return sweepStop('sweep.blocked');   // sekme kapandı ya da gezindi
+  }
+  if (!r || r.blocked) return sweepStop('sweep.blocked');
+
+  // Adım yeni içerik yüklettiyse görelim. Sağa gezmede tam tarama şart:
+  // slayt değişince MutationObserver'ın kirli bayrağını popup'ın taraması da
+  // temizlemiş olabiliyor ve `unchanged` dönerdi.
+  let items = [];
+  try {
+    items = await scanTab(s.tabId, right);
+  } catch {
+    return sweepStop('sweep.blocked');
+  }
+  await addSwept(s.tabId, items);
+
+  const key = 'swept:' + s.tabId;
+  const total = ((await chrome.storage.session.get(key))[key] || []).length;
+  const found = Math.max(0, total - s.base);
+
+  let stuck;
+  if (right) {
+    // Sağa gezmede elimizdeki TEK gösterge bu: tuşa bastık, yeni bir şey
+    // geldi mi? Slayt gösterisinin "sonu" diye bir kavram yok.
+    stuck = found === s.found;
+  } else {
+    const ended = r.atBottom && r.height <= s.height && found === s.found;
+    // Dipte değiliz ama kaydırma da tutmuyor: yanlış kap ya da kilitli sayfa.
+    const stalled = !r.moved && !r.atBottom;
+    stuck = ended || stalled;
+    s.height = Math.max(s.height || 0, r.height || 0);
+  }
+
+  s.idle = stuck ? (s.idle || 0) + 1 : 0;
+  s.found = found;
+  s.at = Date.now();
+
+  if (s.idle >= (right ? SWEEP_IDLE_RIGHT : SWEEP_IDLE)) {
+    await setSweep(s);
+    return sweepStop(right ? 'sweep.rightEnd' : 'sweep.end');
+  }
+
+  await setSweep(s);
+  sweepTimer = setTimeout(sweepTick, SWEEP_MS);
+}
+
+// Worker gezme sırasında ölürse `sweep.running` sonsuza kadar true kalır ve
+// düğme bir daha açılmaz. yt-dlp durumundaki 90 saniyelik eskime kontrolünün
+// aynısı: zamanı geçmiş bir "çalışıyor" kaydı çalışmıyor sayılıyor.
+const SWEEP_STALE_MS = 15000;
+
+async function sweepAlive() {
+  const s = await getSweep();
+  if (!s || !s.running) return s;
+  if (Date.now() - (s.at || 0) < SWEEP_STALE_MS) return s;
+
+  const dead = { ...s, running: false, reason: 'sweep.stopped' };
+  await setSweep(dead);
+  return dead;
+}
+
 // --- popup ile mesajlaşma --------------------------------------------------
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'ytdlp') {
     if (msg.action === 'download') {
-      ytRunning = true;
-      keepAlive(true);
-      langReady.then(() =>
-        pushStatus({ running: true, percent: 0, line: t('yt.starting'), dir: '', error: null })
-      );
-
-      // Klasörü çözmek ilk seferde sonda indirmesi gerektirebiliyor (mutlak yol
-      // öğrenme), o yüzden asenkron: yanıtı beklemeden veriyoruz.
-      ytOutdir().then((outdir) =>
-        nativeSend({ action: 'download', url: msg.url, mode: msg.mode, outdir })
-      );
+      ytStart({ url: msg.url, mode: msg.mode, referer: msg.referer || '' });
       sendResponse({ ok: true });
+      return true;
+    }
+
+    // Izgaradan seçilen manifestler: köprü aynı anda tek indirme yapıyor,
+    // o yüzden sıraya diziliyorlar.
+    if (msg.action === 'queue') {
+      ytEnqueue(msg.urls || [], msg.mode, msg.referer || '').then((n) =>
+        sendResponse({ ok: true, count: n })
+      );
       return true;
     }
 
     // İptal ancak indirmeyi başlatan bağlantı hâlâ ayaktaysa iş görür. Port
     // kopmuşsa nativeSend yeni bir host süreci açar, onun çalışan işi yoktur ve
     // düğme sessizce hiçbir şey yapmış gibi görünür — onun yerine durumu söyle.
-    if (msg.action === 'cancel' && !nativePort) {
-      ytRunning = false;
-      syncKeepAlive();
-      langReady.then(() => pushStatus({ running: false, error: t('wk.cancelNoPort') }));
-      sendResponse({ ok: false });
-      return true;
+    if (msg.action === 'cancel') {
+      // Kuyruğu da boşaltıyoruz: "iptal" bu indirmeyi değil, işi durdurmak
+      // demek. Yoksa sıradaki hemen başlar ve kullanıcı durduramadığını sanır.
+      ytClearQueue();
+
+      if (!nativePort) {
+        ytRunning = false;
+        syncKeepAlive();
+        langReady.then(() => pushStatus({ running: false, left: 0, error: t('wk.cancelNoPort') }));
+        sendResponse({ ok: false });
+        return true;
+      }
+      pushStatus({ left: 0 });
     }
 
     sendResponse({ ok: nativeSend({ action: msg.action, url: msg.url, mode: msg.mode }) });
@@ -853,10 +1451,29 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === 'download') {
-    enqueue(msg.items, msg.host, msg.title)
+    enqueue(msg.items, msg.host, msg.title, msg.pageUrl)
       .then((n) => sendResponse({ ok: true, count: n }))
       .catch((e) => sendResponse({ ok: false, error: e.message }));
     return true; // async yanıt
+  }
+
+  if (msg.type === 'getHistory') {
+    getHistory().then(sendResponse);
+    return true;
+  }
+
+  if (msg.type === 'deleteFiles') {
+    deleteFiles(msg.ids || [])
+      .then(sendResponse)
+      .catch((e) => sendResponse({ gone: 0, failed: [], error: e.message }));
+    return true;
+  }
+
+  if (msg.type === 'clearHistory') {
+    // Zincirden geçiyor: o sırada akan bir indirme kaydı araya yazıp
+    // temizlenmiş listeyi diriltmesin.
+    updateHistory(() => []).then(() => sendResponse({ ok: true }));
+    return true;
   }
 
   if (msg.type === 'getFolderInfo') {
@@ -888,8 +1505,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === 'getNet') {
-    const key = 'net:' + msg.tabId;
-    chrome.storage.session.get(key).then((r) => sendResponse(r[key] || []));
+    // Gezmenin bulduklarını da aynı yerden veriyoruz: popup açısından ikisi de
+    // "ben açık değilken birikmiş medya".
+    (async () => {
+      const keys = ['net:' + msg.tabId, 'swept:' + msg.tabId];
+      const r = await chrome.storage.session.get(keys);
+      sendResponse([...(r[keys[0]] || []), ...(r[keys[1]] || [])]);
+    })();
+    return true;
+  }
+
+  if (msg.type === 'sweep') {
+    (async () => {
+      if (msg.action === 'start') sendResponse(await sweepStart(msg.tabId, msg.mode));
+      else if (msg.action === 'stop') {
+        await sweepStop('sweep.stopped', msg.restore !== false);
+        sendResponse({ ok: true });
+      } else {
+        sendResponse(await sweepAlive());   // 'status'
+      }
+    })();
     return true;
   }
 });

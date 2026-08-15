@@ -19,13 +19,38 @@ const I18N = {
     'chip.all': 'Tümü',
     'chip.image': 'Resim',
     'chip.video': 'Video',
+    'chip.net': 'Ağ',
+    'chip.netTitle':
+      'Yalnızca ağ trafiğinden yakalananlar — sayfanın DOM\'unda hiç görünmeyen, ' +
+      'JS ile çekilen medya. Resim de video da olabilir.',
     'search.ph': 'URL içinde ara…',
     'filter.minWidth': 'min genişlik',
     'gear.title': 'Ayarlar',
+    'pin.title':
+      'Yan panelde aç — başka yere tıklayınca kapanmaz, sen kapatana kadar açık kalır. ' +
+      'Chrome açılır pencereyi odak kaybında kapatıyor ve bu engellenemiyor; ' +
+      'yan panel o kurala tabi değil. Panel, baktığın sekmeyi izler.',
+    'pin.gone': 'Bu sekme kapandı.',
 
     'sel.all': 'Tümünü seç',
     'sel.none': 'Temizle',
     'sel.invert': 'Tersle',
+    'sweep.start': 'Sayfayı gez',
+    'sweep.stop': 'Durdur',
+    'sweep.title':
+      'Sonsuz kaydırmalı sayfayı senin yerine aşağı kaydırır, yeni yüklenen medyayı listeye katar. ' +
+      'Bittiğinde sayfa bulunduğun yere geri döner.',
+    'sweep.right': 'Sağa gez',
+    'sweep.rightTitle':
+      'Sayfaya sağ ok tuşuna basılıyormuş gibi yapar — slayt gösterisi ve ' +
+      'lightbox galerilerinde bir sonraki görsele geçirir. Yeni medya gelmeyi ' +
+      'kesince kendiliğinden durur. Sayfa geri sarılmaz.',
+    'sweep.running': 'geziliyor… +{n}',
+    'sweep.end': 'Sayfa sonuna gelindi · +{n} yeni',
+    'sweep.rightEnd': 'Yeni medya gelmiyor · +{n} yeni',
+    'sweep.stopped': 'Durduruldu · +{n} yeni',
+    'sweep.limit': 'Gezme sınırına gelindi · +{n} yeni',
+    'sweep.blocked': 'Bu sayfa gezilemiyor.',
     'size.title': 'Kart boyutu',
     'size.cols': '{n} sütun',
     'stats': '{seen} gösteriliyor · {imgs} resim, {vids} video',
@@ -70,13 +95,56 @@ const I18N = {
       '{title} boşsa yerine site adı yazılır.',
     'folder.canceled': 'İptal edildi.',
 
+    'hist.title': 'İndirme geçmişi',
+    'hist.gear': 'İndirme geçmişi — hangi sayfadan ne indi',
+    'hist.search.ph': 'Dosya, sayfa ya da URL ara…',
+    'hist.empty': 'Henüz indirme yok.',
+    'hist.noMatch': 'Aramayla eşleşen kayıt yok.',
+    'hist.clear': 'Geçmişi temizle',
+    'hist.cleared': 'Geçmiş temizlendi.',
+    'hist.count': '{n} kayıt',
+    'hist.files': '{n} dosya',
+    'hist.ok': 'indi',
+    'hist.failed': 'başarısız',
+    'hist.pending': 'sürüyor',
+    'hist.openPage': 'Sayfayı yeni sekmede aç',
+    'hist.reveal': 'Dosyayı klasörde göster',
+    'hist.movedTo': 'Köprü şuraya taşıdı: {path}',
+    'hist.unknownPage': 'Bilinmeyen sayfa',
+    'hist.selected': '{n} seçili',
+    'hist.selectAll': 'Bu sayfadakilerin hepsini seç',
+    'hist.deleted': 'silindi',
+
+    'del.button': 'Seçilen dosyaları sil',
+    'del.confirm': '{n} dosya diskten kalıcı olarak silinecek. Geri alınamaz.',
+    'del.yes': 'Evet, sil',
+    'del.no': 'Vazgeç',
+    'del.working': 'Siliniyor…',
+    'del.done': '{n} dosya silindi.',
+    'del.partial': '{n} dosya silindi, {f} tanesi silinemedi.',
+    'del.none': 'Hiçbir dosya silinemedi.',
+    'del.err.outside':
+      'kayıt klasörünün dışında — köprü oraya dokunmuyor, elle silmen gerekiyor',
+    'del.err.notfile': 'dosya değil (klasör ya da bağlantı)',
+    'del.err.notabs': 'geçersiz yol',
+    'del.err.oserr': 'işletim sistemi izin vermedi',
+    'del.err.nobridge': 'köprü yanıt vermedi — kayıt klasörü İndirilenler dışında olduğu için silmeyi o yapmalıydı',
+
     'grid.unscannable': 'Bu sayfa taranamıyor.',
     'grid.noMatch': 'Bu filtrelerle eşleşen medya yok.',
+    'notice.dash':
+      'Bu sayfadaki video parçalı akış (DASH/HLS). Listedeki .mpd/.m3u8 bir liste dosyası, ' +
+      'yanındaki mp4\'ler de ayrı görüntü ve ses parçaları — biri tek başına indirilirse ' +
+      'sessiz video ya da görüntüsüz ses olur. Tamamı için üstteki yt-dlp barını kullan.',
     'notice.blob': '{n} adet blob: video atlandı — bunlar parçalı akış (HLS/DASH) ve eklentiden indirilemez.',
     'notice.capped': "Liste {max} öğede doldu; yeni gelenler eklenmiyor. Seçtiklerini indirip popup'ı yeniden aç.",
     'notice.bgTruncated': 'Sayfa çok büyük olduğu için CSS arka plan görsellerinin bir kısmı taranamadı.',
 
     'tag.net': 'ağ',
+    'tag.manifest': 'akış',
+    'tag.manifestTitle':
+      'Parçalı akışın liste dosyası. Bunu seçip indirirsen yt-dlp çalışır ve ' +
+      'görüntüyle sesi birleştirip tek dosya verir — bu sayfadaki videoyu almanın doğru yolu.',
     'tag.image': 'resim',
     'tag.video': 'video',
     'badge.done': 'indirildi',
@@ -87,6 +155,8 @@ const I18N = {
     'footer.download': 'Seçilenleri indir',
     'btn.queueing': 'Kuyruğa alınıyor…',
     'btn.queued': '{n} dosya kuyrukta',
+    'btn.queuedYt': '{n} akış yt-dlp kuyruğunda',
+    'yt.left': 'sırada {n} tane daha',
     'btn.error': 'Hata: {msg}',
     'err.unknown': 'bilinmiyor',
     'dl.running': 'İndiriliyor… {fin}/{total}',
@@ -122,13 +192,39 @@ const I18N = {
     'chip.all': 'All',
     'chip.image': 'Images',
     'chip.video': 'Video',
+    'chip.net': 'Network',
+    'chip.netTitle':
+      'Only what was captured from network traffic — media fetched by JS that ' +
+      'never appears in the page DOM. Can be images or video.',
     'search.ph': 'Search in URL…',
     'filter.minWidth': 'min width',
     'gear.title': 'Settings',
+    'pin.title':
+      'Open in the side panel — it does not close when you click elsewhere and stays ' +
+      'until you close it. Chrome closes the action popup as soon as it loses focus and ' +
+      'that cannot be prevented; the side panel is not subject to that rule. The panel ' +
+      'follows whichever tab you are looking at.',
+    'pin.gone': 'This tab has been closed.',
 
     'sel.all': 'Select all',
     'sel.none': 'Clear',
     'sel.invert': 'Invert',
+    'sweep.start': 'Sweep page',
+    'sweep.stop': 'Stop',
+    'sweep.title':
+      'Scrolls an infinite-scroll page down for you and adds newly loaded media to the list. ' +
+      'When it finishes the page returns to where you were.',
+    'sweep.right': 'Sweep right',
+    'sweep.rightTitle':
+      'Presses the right arrow key on the page for you — advances slideshows ' +
+      'and lightbox galleries to the next image. Stops on its own once no new ' +
+      'media arrives. The page is not rewound afterwards.',
+    'sweep.running': 'sweeping… +{n}',
+    'sweep.end': 'Reached the end of the page · +{n} new',
+    'sweep.rightEnd': 'No new media arriving · +{n} new',
+    'sweep.stopped': 'Stopped · +{n} new',
+    'sweep.limit': 'Sweep limit reached · +{n} new',
+    'sweep.blocked': "This page can't be swept.",
     'size.title': 'Card size',
     'size.cols': '{n} columns',
     'stats': '{seen} shown · {imgs} images, {vids} videos',
@@ -173,13 +269,56 @@ const I18N = {
       'If {title} is empty the site name is used instead.',
     'folder.canceled': 'Canceled.',
 
+    'hist.title': 'Download history',
+    'hist.gear': 'Download history — what came from which page',
+    'hist.search.ph': 'Search file, page or URL…',
+    'hist.empty': 'No downloads yet.',
+    'hist.noMatch': 'No entries match your search.',
+    'hist.clear': 'Clear history',
+    'hist.cleared': 'History cleared.',
+    'hist.count': '{n} entries',
+    'hist.files': '{n} files',
+    'hist.ok': 'done',
+    'hist.failed': 'failed',
+    'hist.pending': 'running',
+    'hist.openPage': 'Open the page in a new tab',
+    'hist.reveal': 'Show the file in its folder',
+    'hist.movedTo': 'The bridge moved it to: {path}',
+    'hist.unknownPage': 'Unknown page',
+    'hist.selected': '{n} selected',
+    'hist.selectAll': 'Select everything from this page',
+    'hist.deleted': 'deleted',
+
+    'del.button': 'Delete selected files',
+    'del.confirm': '{n} file(s) will be permanently deleted from disk. This cannot be undone.',
+    'del.yes': 'Yes, delete',
+    'del.no': 'Cancel',
+    'del.working': 'Deleting…',
+    'del.done': '{n} file(s) deleted.',
+    'del.partial': '{n} file(s) deleted, {f} could not be deleted.',
+    'del.none': 'No files could be deleted.',
+    'del.err.outside': 'outside the save folder — the bridge will not touch it, delete it manually',
+    'del.err.notfile': 'not a file (a folder or a link)',
+    'del.err.notabs': 'invalid path',
+    'del.err.oserr': 'the operating system refused',
+    'del.err.nobridge': 'the bridge did not respond — it had to do the deleting because the save folder is outside Downloads',
+
     'grid.unscannable': "This page can't be scanned.",
     'grid.noMatch': 'No media matches these filters.',
+    'notice.dash':
+      'The video on this page is a segmented stream (DASH/HLS). The .mpd/.m3u8 in the list is ' +
+      'a playlist file and the mp4s next to it are separate video and audio tracks — downloading ' +
+      'one on its own gives you a silent video or audio with no picture. Use the yt-dlp bar above ' +
+      'to get the whole thing.',
     'notice.blob': "Skipped {n} blob: video(s) — these are segmented streams (HLS/DASH) and can't be downloaded from the extension.",
     'notice.capped': 'The list filled up at {max} items; new ones are no longer added. Download your selection and reopen the popup.',
     'notice.bgTruncated': 'The page is very large, so some CSS background images could not be scanned.',
 
     'tag.net': 'network',
+    'tag.manifest': 'stream',
+    'tag.manifestTitle':
+      'The playlist file of a segmented stream. Selecting and downloading this runs yt-dlp, ' +
+      'which merges the video and audio into one file — the right way to get the video on this page.',
     'tag.image': 'image',
     'tag.video': 'video',
     'badge.done': 'downloaded',
@@ -190,6 +329,8 @@ const I18N = {
     'footer.download': 'Download selected',
     'btn.queueing': 'Queueing…',
     'btn.queued': '{n} files queued',
+    'btn.queuedYt': '{n} stream(s) queued for yt-dlp',
+    'yt.left': '{n} more queued',
     'btn.error': 'Error: {msg}',
     'err.unknown': 'unknown',
     'dl.running': 'Downloading… {fin}/{total}',

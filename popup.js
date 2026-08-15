@@ -5,6 +5,17 @@
 
 const $ = (sel) => document.querySelector(sel);
 
+// Yan panelde miyiz?
+//
+// Chrome'un açılır penceresi başka yere tıklandığı anda kapanıyor ve bunu
+// engelleyen bir API yok. Yan panel bu kurala tabi değil: tarayıcıya kenetli
+// duruyor, sayfayla çalışırken açık kalıyor, kullanıcı kapatana kadar gitmiyor.
+//
+// Aynı `popup.html` iki kapta birden çalışıyor; fark yalnızca hedef sekmenin
+// nasıl bulunduğu ve yerleşim.
+const IN_PANEL = new URLSearchParams(location.search).has('panel');
+document.documentElement.classList.toggle('panel', IN_PANEL);
+
 const grid = $('#grid');
 const notice = $('#notice');
 
@@ -78,6 +89,29 @@ const HEIGHTS = /^(144|240|360|480|540|576|720|1080|1440|2160|4320)$/;
 
 const Q_PARAM = /^(quality|res|resolution|vq|bitrate|br|itag|height|size)$/i;
 
+// İmza / son kullanma parametreleri: dosyayı DEĞİL, erişim iznini tarif
+// ediyorlar. CDN aynı videoyu her istekte yeni bir imzayla verdiği için bunlar
+// kimliğin parçası sayılırsa tek video birden çok kez listeye giriyor.
+//
+// Liste bilerek dar: burada yanlış yapmak iki AYRI videoyu aynı sanmak demek ve
+// biri listeden kaybolur — fazladan bir karttan daha kötü. Bu yüzden yalnızca
+// adı açıkça imza/süre bildiren parametreler ve iyi bilinen CDN önekleri var;
+// `t`, `e`, `id` gibi kısa ve çift anlamlı olanlar KASTEN dışarıda.
+const SIG_PARAM =
+  /^(?:x-amz-|_nc_|__)|^(?:token|signature|sig|sign|hmac|policy|key-pair-id|expires|expire|expiry|exp|ttl|nonce|auth|authkey|access_key|verify|validfrom|validto|cachebust|cb|rnd)$/i;
+
+/** Adresin imzasız kimliği: yalnızca token'ı değişen iki adres aynı dosyadır. */
+function bareKey(url) {
+  try {
+    const u = new URL(url);
+    const rest = [];
+    for (const [k, v] of u.searchParams) if (!SIG_PARAM.test(k)) rest.push(k + '=' + v);
+    return u.host + u.pathname + '?' + rest.sort().join('&');
+  } catch {
+    return url;
+  }
+}
+
 /**
  * URL'nin kalite damgası çıkarılmış hâli. -> {key, tag} | null
  * `key` aynı olan iki video aynı videodur; `tag` kartta gösterilen kalite.
@@ -104,12 +138,15 @@ function variantKey(url) {
       (s, sep, n) => (HEIGHTS.test(n) ? ((tag = tag || n + 'p'), sep) : s));
 
   // Kalan sorgu parametreleri anahtarın parçası; kalite belirtenler ayıklanıyor.
+  // İmza parametreleri de düşüyor: aynı videonun iki farklı token'lı adresi
+  // yoksa iki ayrı kart olurdu.
   const rest = [];
   for (const [k, v] of u.searchParams) {
     if (Q_PARAM.test(k)) {
       if (!tag && /^\d{3,4}$/.test(v) && HEIGHTS.test(v)) tag = v + 'p';
       continue;
     }
+    if (SIG_PARAM.test(k)) continue;
     rest.push(k + '=' + v);
   }
 
@@ -134,6 +171,21 @@ function qLabel(m) {
   return ext(m.url) || shortName(m.url);
 }
 
+/**
+ * Bir medyanın hangi karta ait olduğu. İki kaynak var:
+ *
+ * 1. `grp` — tarayıcı aynı `<video>` etiketinin altındaki kaynakları böyle
+ *    işaretliyor. Bu **kesin** bilgi: DOM aynı video olduklarını söylüyor,
+ *    URL'de kalite damgası olup olmaması hiç önemli değil. İmzalı/hash'li CDN
+ *    adreslerinde (`…/a3f9c1.mp4?token=…`) elimizdeki tek dayanak bu.
+ * 2. `variantKey` — damgayı URL'den çıkarma tahmini. Damga yoksa `null`.
+ */
+function groupKey(m) {
+  if (m.grp) return { key: 'grp:' + m.grp, tag: variantKey(m.url)?.tag || '', sure: true };
+  const k = variantKey(m.url);
+  return k && { key: k.key, tag: k.tag, sure: false };
+}
+
 // Anahtar -> grup. Canlı gelen bir varyant yeni kart açmak yerine mevcut
 // kartın altına düşsün diye çizimler arasında saklanıyor.
 let groupIndex = new Map();
@@ -142,9 +194,12 @@ let groupIndex = new Map();
 function settle(g) {
   g.items.sort((a, b) => qRank(b) - qRank(a) || (b.size || 0) - (a.size || 0));
   for (const m of g.items) m._vars = null;
-  // Hiçbirinde kalite damgası yoksa bunlar varyant değil, adaş dosyalardır.
   g.primary = g.items[0];
-  g.primary._vars = g.items.length > 1 && g.items.some((m) => m._qtag) ? g.items : null;
+  // `sure`: grup aynı <video> etiketinden geliyor, yani aynı video olduğu
+  // KESİN — damga aramaya gerek yok. Değilse eski kural sürüyor: hiçbirinde
+  // kalite damgası yoksa bunlar varyant değil, adaş dosyalardır.
+  g.primary._vars =
+    g.items.length > 1 && (g.sure || g.items.some((m) => m._qtag)) ? g.items : null;
   return g.primary;
 }
 
@@ -156,7 +211,7 @@ function groupVariants(list) {
   for (const m of list) {
     m._vars = null;
     m._qtag = '';
-    const k = m.kind === 'video' ? variantKey(m.url) : null;
+    const k = m.kind === 'video' ? groupKey(m) : null;
     if (!k) {
       slots.push(m);
       continue;
@@ -166,8 +221,9 @@ function groupVariants(list) {
     const g = groupIndex.get(k.key);
     if (g) {
       g.items.push(m);
+      if (k.sure) g.sure = true;
     } else {
-      const ng = { items: [m], primary: m };
+      const ng = { items: [m], primary: m, sure: !!k.sure };
       groupIndex.set(k.key, ng);
       slots.push(ng);   // kartın yeri: gruptan İLK göreni belirliyor
     }
@@ -183,6 +239,14 @@ function groupVariants(list) {
 // gelenler sona ekleniyor ki liste gözünün önünde yerinden oynamasın).
 const byUrl = new Map();
 let blobSeen = 0;
+
+// Parçalı akış (DASH/HLS) işaretleri. Böyle bir sayfada listede görünen
+// dosyalar TEK BAŞINA işe yaramıyor: `.mpd`/`.m3u8` sadece bir liste dosyası,
+// yanlarındaki mp4'ler de ayrı GÖRÜNTÜ ve SES parçaları. Bunları "aynı videonun
+// kaliteleri" diye tek kartta toplamak yanlış olurdu — kullanıcı birini seçip
+// sessiz bir video ya da görüntüsüz bir ses indirirdi.
+const MANIFEST_EXT = /\.(m3u8|mpd)(\?|#|$)/i;
+let manifestSeen = false;
 let capped = false;
 let bgTruncated = false;   // CSS arka plan taraması süre bütçesine takıldı
 
@@ -190,28 +254,61 @@ let bgTruncated = false;   // CSS arka plan taraması süre bütçesine takıld�
 // büyürse popup kilitlenir. Üst sınıra gelince yeni gelenleri almayı bırakıyoruz.
 const MAX_ITEMS = 3000;
 
+// İmzasız kimlik -> havuzdaki kayıt. Aynı dosyanın yalnızca token'ı değişmiş
+// hâli ikinci bir kart açmasın diye. `byUrl` yine tam adresle anahtarlı:
+// indirirken ELİMİZDEKİ adresi kullanmak zorundayız, imzasız hâli çalışmaz.
+const byKey = new Map();
+
+/** Yeni bilgiyi eskisine katar — ama `url`'e dokunmadan. */
+function enrich(prev, it) {
+  const url = prev.url;
+  if (area(it) > area(prev)) Object.assign(prev, it);
+  if (!prev.size && it.size) prev.size = it.size;
+  if (!prev.grp && it.grp) prev.grp = it.grp;
+  prev.url = url;   // indirilecek adres ilk gördüğümüz (imzası taze) olan
+}
+
 /** Havuza katar; sadece gerçekten yeni olanları döndürür. */
 function absorb(items) {
   const fresh = [];
   for (const it of items || []) {
     if (!it || !it.url) continue;
+
     const prev = byUrl.get(it.url);
     if (prev) {
       // Aynı URL birden çok yerden geldiyse en zengin bilgiyi tut.
-      if (area(it) > area(prev)) Object.assign(prev, it);
-      if (!prev.size && it.size) prev.size = it.size;
-    } else if (byUrl.size >= MAX_ITEMS) {
-      capped = true;
-    } else {
-      byUrl.set(it.url, it);
-      fresh.push(it);
+      enrich(prev, it);
+      continue;
     }
+
+    // Adres yeni ama dosya yeni olmayabilir: yalnızca imza/son kullanma
+    // parametreleri değişmişse bu aynı dosyanın tazelenmiş adresi.
+    const key = bareKey(it.url);
+    const twin = byKey.get(key);
+    if (twin) {
+      enrich(twin, it);
+      continue;
+    }
+
+    if (byUrl.size >= MAX_ITEMS) {
+      capped = true;
+      continue;
+    }
+    if (MANIFEST_EXT.test(it.url)) manifestSeen = true;
+    byUrl.set(it.url, it);
+    byKey.set(key, it);
+    fresh.push(it);
   }
   return fresh;
 }
 
 function showNotice() {
   const msgs = [];
+  // Bu, blob uyarısından ÖNCE geliyor: kullanıcının gördüğü asıl kafa
+  // karışıklığı "tek video ama üç satır" ve cevabı bu cümlede.
+  if (manifestSeen) {
+    msgs.push(t('notice.dash'));
+  }
   if (blobSeen) {
     msgs.push(t('notice.blob', { n: blobSeen }));
   }
@@ -285,6 +382,10 @@ async function refresh(full = false) {
     const fresh = absorb(found);
     showNotice();
 
+    // Parçalı akış ilk kez şimdi fark edilmiş olabilir: `initYt` açılışta
+    // çalıştı ama o an henüz hiçbir şey taranmamıştı. Bar kapalıysa aç.
+    if (streamHere() && $('#ytbar').classList.contains('hidden')) await initYt();
+
     if (full && !all.length) {
       // İlk çizim: video önce, sonra büyükten küçüğe.
       all = [...byUrl.values()].sort((a, b) => {
@@ -327,14 +428,32 @@ async function tick() {
   } catch {
     clearInterval(liveTimer);   // sekme kapandı
     liveTimer = null;
-    return;
+    // Panelde sekme kapanınca bir sonraki sekme değişimi bizi toparlayacak;
+    // o ana kadar boş ızgarayla bakakalmasın diye sebebini yazıyoruz.
+    if (IN_PANEL) {
+      scanError = t('pin.gone');
+      drawScanError();
+    }
+    return;                     // gezmeyi worker kendi kapatıyor (tabs.onRemoved)
   }
 
   // Sayfa değiştiyse (adres çubuğundan ya da SPA gezinmesiyle) liste artık
   // başka bir sayfaya ait; sıfırdan kur.
   if (cur.url !== tab.url) {
-    await navigated(cur);
-    return;
+    // ...ama gezme sürerken adres değişimi çoğu zaman GEZİNME DEĞİL. Slayt
+    // gösterileri ve lightbox'lar her görsel için pushState yapıyor
+    // (/album/1 → /album/2). Bunu gezinme sayarsak her adımda liste silinir,
+    // üstelik gezmenin kendisi de iptal edilir: kullanıcı sağa gezmeyi
+    // başlatır, tek kart görür ve hiçbir şey birikmez.
+    // Aynı site içinde kalıyorsak "aynı galeride ilerledik" sayıyoruz.
+    if (sweeping() && sameHost(cur.url, tab.url)) {
+      const wasTitle = tab.title;
+      tab = cur;
+      if (cur.title !== wasTitle) await initYt();
+    } else {
+      await navigated(cur);
+      return;
+    }
   }
   // SPA'larda başlık adresten biraz sonra oturuyor; video kartı eski videonun
   // adında kalmasın diye başlık değişince kartı tazeliyoruz.
@@ -354,12 +473,41 @@ async function tick() {
   await refresh(force);
 }
 
-async function navigated(cur) {
+/**
+ * İki adres aynı siteye mi ait? Gezme sırasında adres değişiminin "galeride
+ * bir sonraki görsel" mi yoksa gerçek bir gezinme mi olduğunu ayırıyor.
+ * Site değişmişse liste artık geçersiz, sıfırlamak doğru.
+ */
+function sameHost(a, b) {
+  try {
+    return new URL(a).host === new URL(b).host;
+  } catch {
+    return false;
+  }
+}
+
+/** tabSwitch: panelde başka sekmeye geçildi — sayfa gezinmesi değil. */
+async function navigated(cur, tabSwitch = false) {
   tab = cur;
   ticks = 0;
 
+  // Buraya gelmişsek gezme ya çalışmıyor ya da başka bir siteye geçilmiş
+  // (aynı site içi adres değişimi yukarıda gezinme sayılmıyor). Gezmeyi worker
+  // durduruyor; biz yalnızca haber veriyoruz ki geri sarma da onun tarafında
+  // kalsın — burada durdurmak, kullanıcıyı ARTIK BAŞKA OLAN sayfada eski
+  // konuma koymaya çalışmak olurdu.
+  if (sweeping() && !tabSwitch) {
+    chrome.runtime
+      .sendMessage({ type: 'sweep', action: 'stop', restore: false })
+      .then(refreshSweep);
+  } else if (tabSwitch) {
+    paintSweep();   // gezme başka sekmede sürüyor olabilir; düğmeleri ona göre çiz
+  }
+
   byUrl.clear();
+  byKey.clear();   // ikizi olan kayıtların defteri de o sayfaya aitti
   blobSeen = 0;
+  manifestSeen = false;
   capped = false;
   all = [];
   listCache = [];
@@ -375,6 +523,9 @@ async function navigated(cur) {
 
   await refresh(true);
   await initYt();
+  // Sekme kapanınca canlı takip durmuştu; panelde başka sekmeye geçilince
+  // yeniden ayağa kalkması gerekiyor (startLive zaten çift kurulumu engelliyor).
+  startLive();
 }
 
 // --- render ----------------------------------------------------------------
@@ -383,7 +534,11 @@ function matches(m) {
   const q = $('#search').value.trim().toLowerCase();
   const minW = parseInt($('#minWidth').value, 10) || 0;
 
-  if (kindFilter !== 'all' && m.kind !== kindFilter) return false;
+  // "Ağ" türe göre değil KAYNAĞA göre süzüyor: ağdan yakalanan medya hem resim
+  // hem video olabilir. Bu yüzden tür karşılaştırmasının dışında duruyor.
+  if (kindFilter === 'net') {
+    if (!m.net) return false;
+  } else if (kindFilter !== 'all' && m.kind !== kindFilter) return false;
   if (q && !m.url.toLowerCase().includes(q)) return false;
   // Boyutu bilinmeyenleri (w=0) elemeye çalışmıyoruz; çoğu lazy-load
   // görselinde boyut okunamıyor ve süzgeç onları haksız yere silerdi.
@@ -428,7 +583,16 @@ function buildCard(m) {
 
   const tag = document.createElement('span');
   tag.className = 'tag';
-  tag.textContent = m.net ? t('tag.net') : m.kind === 'video' ? t('tag.video') : ext(m.url) || t('tag.image');
+  // Manifest kartını ayırt etmek şart: bu kart tıklandığında chrome.downloads
+  // değil yt-dlp çalışıyor, ve tek gerçekten işe yarayan seçenek o.
+  if (MANIFEST_EXT.test(m.url)) {
+    tag.textContent = t('tag.manifest');
+    tag.classList.add('stream');
+    tag.title = t('tag.manifestTitle');
+  } else {
+    tag.textContent =
+      m.net ? t('tag.net') : m.kind === 'video' ? t('tag.video') : ext(m.url) || t('tag.image');
+  }
   card.appendChild(tag);
 
   const tick = document.createElement('span');
@@ -574,15 +738,16 @@ function joinGroup(m) {
   m._qtag = '';
   if (m.kind !== 'video') return false;
 
-  const k = variantKey(m.url);
+  const k = groupKey(m);
   if (!k) return false;
   m._qtag = k.tag;
 
   const g = groupIndex.get(k.key);
   if (!g) {
-    groupIndex.set(k.key, { items: [m], primary: m });
+    groupIndex.set(k.key, { items: [m], primary: m, sure: !!k.sure });
     return false;   // grubun ilk üyesi: normal kart olarak eklenecek
   }
+  if (k.sure) g.sure = true;
 
   const was = g.primary;
   g.items.push(m);
@@ -740,9 +905,21 @@ $('#selInvert').addEventListener('click', () => {
 function applyTileSize(px) {
   // Sadece genişlik; yükseklik CSS'te aspect-ratio ile genişlikten türüyor.
   document.documentElement.style.setProperty('--tile-w', px + 'px');
-  const cols = Math.max(1, Math.floor((756 + 8) / (px + 8)));
+
+  // Izgaranın GERÇEK genişliğinden hesaplıyoruz: yan panelin genişliğini
+  // kullanıcı sürükleyerek belirliyor, sabit bir sayı orada yanlış olurdu.
+  // Ölçüm alınamazsa (ilk çizimden önce) açılır pencerenin ölçüsüne düşüyoruz.
+  const w = grid.clientWidth - 24 || 756;
+  const cols = Math.max(1, Math.floor((w + 8) / (px + 8)));
   $('#sizeLabel').textContent = t('size.cols', { n: cols });
 }
+
+// Panel yeniden boyutlandırılınca sütun sayısı da değişiyor; etiket yalan
+// söylemesin. Açılır pencerede bu olay hiç tetiklenmiyor, zararı yok.
+window.addEventListener('resize', () => {
+  applyTileSize(+$('#size').value);
+  topUp();   // panel genişleyince boşluk kalırsa devamını çek
+});
 
 $('#size').addEventListener('input', (e) => {
   applyTileSize(+e.target.value);
@@ -752,12 +929,83 @@ $('#size').addEventListener('input', (e) => {
 
 $('#size').addEventListener('change', (e) => saveSetting({ tileSize: +e.target.value }));
 
+// --- sayfayı gez -----------------------------------------------------------
+// Gezmenin kendisi SERVICE WORKER'da çalışıyor (bkz. background.js): popup
+// kapansa da sürüyor, bulduklarını `swept:<tabId>` altında biriktiriyor ve
+// açık olduğumuzda `sweptAdded` ile anında yolluyor.
+//
+// Buradaki kod yalnızca kumanda: başlat/durdur mesajı at, gelen durumu çiz.
+// v1.20'ye kadar döngü buradaydı ve popup kapanınca gezme de biterdi.
+
+let sweepState = null;   // worker'dan gelen son durum
+
+const sweepMode = () => sweepState?.mode || 'down';
+
+// Gezme bir SEKMEYE ait. Panelde başka sekmeye bakarken "Durdur" göstermek,
+// baktığın sayfada bir şey dönüyormuş gibi yapardı.
+const sweeping = () => !!sweepState?.running && (!tab || sweepState.tabId === tab.id);
+
+/** İki düğmenin yüzü tek yerden çiziliyor: dil değişince de buradan tazeleniyor. */
+function paintSweep() {
+  // Çalışan düğme "Durdur"a dönüyor, öteki kapanıyor: aynı anda iki gezme
+  // birbirinin durma koşulunu bozardı.
+  for (const [sel, mode, label, tip] of [
+    ['#sweep', 'down', 'sweep.start', 'sweep.title'],
+    ['#sweepRight', 'right', 'sweep.right', 'sweep.rightTitle']
+  ]) {
+    const btn = $(sel);
+    const mine = sweeping() && sweepMode() === mode;
+    btn.textContent = mine ? t('sweep.stop') : t(label);
+    btn.classList.toggle('on', mine);
+    btn.disabled = sweeping() && !mine;
+    btn.title = t(tip);
+  }
+
+  // Durum satırı: çalışırken "geziliyor… +12", bitince sebebi.
+  // Metni değil ANAHTARI saklıyoruz ki dil değişince yeni dilde kurulabilsin.
+  const info = $('#sweepInfo');
+  if (!sweepState) {
+    info.textContent = '';
+    return;
+  }
+  const key = sweeping() ? 'sweep.running' : sweepState.reason || 'sweep.stopped';
+  info.textContent = t(key, { n: sweepState.found || 0 });
+}
+
+async function refreshSweep() {
+  sweepState = await chrome.runtime.sendMessage({ type: 'sweep', action: 'status' });
+  paintSweep();
+}
+
+async function toggleSweep(mode) {
+  if (sweeping()) {
+    await chrome.runtime.sendMessage({ type: 'sweep', action: 'stop' });
+  } else {
+    await chrome.runtime.sendMessage({ type: 'sweep', action: 'start', tabId: tab.id, mode });
+  }
+  await refreshSweep();
+}
+
+$('#sweep').addEventListener('click', () => toggleSweep('down'));
+$('#sweepRight').addEventListener('click', () => toggleSweep('right'));
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'sweepStatus') {
+    sweepState = msg.sweep;
+    paintSweep();
+  }
+  // Worker'ın gezerken bulduğu medya. Popup'ın kendi taraması bunu kaçırabilir:
+  // slayt değişince kirli bayrağını worker'ın taraması temizlemiş olur ve
+  // bizimki `unchanged` döner. Buradan gelmesi o yüzden şart, tamamlayıcı değil.
+  if (msg.type === 'sweptAdded' && tab && msg.tabId === tab.id) ingest(absorb(msg.items));
+});
 // --- ayarlar ekranı --------------------------------------------------------
 // Popup'ın üstüne sağdan kayan tam ekran katman. Klasör yolunu ancak ekran
 // açılırken soruyoruz: mutlak yol henüz bilinmiyorsa arka plan sessiz bir sonda
 // indirmesi yapıyor, bunu her popup açılışında yaptırmak gereksiz sürpriz olur.
 
 function openSettings() {
+  closeHistory();   // iki katman üst üste açılmasın
   $('#settingsView').classList.add('open');
   showFolder();
 }
@@ -775,11 +1023,14 @@ $('#gear').addEventListener('click', () => {
 $('#settingsBack').addEventListener('click', closeSettings);
 
 // Ekran açıkken Esc geri döndürsün; kullanıcı popup'ı kapatmak zorunda kalmasın.
+// Aksi hâlde Esc popup'ın tamamını kapatır ve kullanıcı ızgaraya dönemez.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && $('#settingsView').classList.contains('open')) {
-    e.preventDefault();
-    closeSettings();
-  }
+  if (e.key !== 'Escape') return;
+  const open = document.querySelector('.view.open');
+  if (!open) return;
+  e.preventDefault();
+  if (open.id === 'settingsView') closeSettings();
+  else closeHistory();
 });
 
 // --- kayıt klasörü ---------------------------------------------------------
@@ -852,6 +1103,353 @@ $('#saveSettings').addEventListener('click', async () => {
   setTimeout(() => (note.textContent = ''), 1600);
 });
 
+// --- indirme geçmişi -------------------------------------------------------
+// Chrome'un kendi indirme listesi dosyayı ve kaynak URL'sini biliyor ama onu
+// BULDUĞUMUZ SAYFAYI bilmiyor. Bir galeriden 40 fotoğraf indirdikten bir hafta
+// sonra "bunlar neredendi" sorusunun tarayıcıda cevabı yok; burada var.
+//
+// Kayıtlar sayfaya göre gruplu: aynı sayfadan inen 40 dosya tek başlığın
+// altında duruyor, yoksa liste aynı adresi 40 kez tekrarlardı.
+
+let histCache = [];        // arama ve dil değişiminde yeniden çizmek için ham liste
+let histSel = new Set();   // silmek üzere seçilen indirme kimlikleri
+
+function histTime(ms) {
+  return new Date(ms).toLocaleString(getLang() === 'tr' ? 'tr-TR' : 'en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+/** Bir kaydın aramada taranan alanları: dosya adı, sayfa ve kaynak URL. */
+function histHay(e) {
+  return [e.name, e.url, e.page?.title, e.page?.url].filter(Boolean).join(' ').toLowerCase();
+}
+
+/** Sayfaya göre gruplar; grupların sırası ilk (yani en yeni) kaydın sırası. */
+function histGroups(list) {
+  const index = new Map();
+  const out = [];
+  for (const e of list) {
+    const key = e.page?.url || e.page?.host || '';
+    let g = index.get(key);
+    if (!g) {
+      g = { page: e.page, items: [] };
+      index.set(key, g);
+      out.push(g);
+    }
+    g.items.push(e);
+  }
+  return out;
+}
+
+function renderHistory() {
+  const body = $('#histBody');
+  const q = $('#histSearch').value.trim().toLowerCase();
+  const list = q ? histCache.filter((e) => histHay(e).includes(q)) : histCache;
+
+  $('#histCount').textContent = t('hist.count', { n: list.length });
+  body.innerHTML = '';
+
+  if (!list.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = histCache.length ? t('hist.noMatch') : t('hist.empty');
+    body.appendChild(empty);
+    paintHistFoot();
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+
+  for (const g of histGroups(list)) {
+    const box = document.createElement('div');
+    box.className = 'hist-group';
+
+    const headRow = document.createElement('div');
+    headRow.className = 'hist-row head';
+
+    // Grup kutusu: o sayfadan inen her şeyi tek hamlede seçiyor. Zaten silinmiş
+    // kayıtlar sayılmıyor, yoksa kutu hiç "dolu" görünmezdi.
+    const live = g.items.filter((e) => e.state !== 'deleted');
+    const all = document.createElement('input');
+    all.type = 'checkbox';
+    all.className = 'hist-pick-all';
+    all.title = t('hist.selectAll');
+    all.disabled = !live.length;
+    all.checked = live.length > 0 && live.every((e) => histSel.has(e.id));
+    headRow.appendChild(all);
+
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'hist-page';
+    // Sayfa adresi yoksa (eski kayıt, ya da adresi okunamayan sekme) açacak
+    // bir yer de yok; düğme tıklanmaz oluyor.
+    head.disabled = !g.page?.url;
+    if (g.page?.url) {
+      head.dataset.url = g.page.url;
+      head.title = g.page.url + '\n' + t('hist.openPage');
+    }
+
+    const ptitle = document.createElement('span');
+    ptitle.className = 'hist-ptitle';
+    ptitle.textContent = g.page?.title || g.page?.host || t('hist.unknownPage');
+
+    const phost = document.createElement('span');
+    phost.className = 'hist-phost';
+    phost.textContent = g.page?.host || '';
+
+    const pn = document.createElement('span');
+    pn.className = 'hist-pn';
+    pn.textContent = t('hist.files', { n: g.items.length });
+
+    head.append(ptitle, phost, pn);
+    headRow.appendChild(head);
+    box.appendChild(headRow);
+
+    for (const e of g.items) {
+      const gone = e.state === 'deleted';
+
+      const line = document.createElement('div');
+      line.className = 'hist-row' + (gone ? ' gone' : '');
+
+      const pick = document.createElement('input');
+      pick.type = 'checkbox';
+      pick.className = 'hist-pick';
+      pick.dataset.id = String(e.id);
+      pick.disabled = gone;                    // silineni tekrar silmeye gerek yok
+      pick.checked = histSel.has(e.id);
+      line.appendChild(pick);
+
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'hist-file';
+      row.dataset.id = String(e.id);
+      if (e.move) row.dataset.move = e.move;
+      if (gone) row.dataset.gone = '1';
+      // Taşınmış dosyada "klasörde göster" yok (Chrome'un kaydı ara klasörü
+      // gösteriyor), o yüzden ipucu da onu vaat etmiyor.
+      row.title =
+        e.url + '\n' + (e.move || e.name) + (e.move || gone ? '' : '\n' + t('hist.reveal'));
+
+      const name = document.createElement('span');
+      name.className = 'hist-name';
+      name.textContent = e.name;
+
+      const state = document.createElement('span');
+      state.className = 'hist-state ' + (e.state || 'running');
+      state.textContent = gone
+        ? t('hist.deleted')
+        : e.state === 'done'
+          ? t('hist.ok')
+          : e.state === 'failed'
+            ? t('hist.failed')
+            : t('hist.pending');
+
+      const when = document.createElement('span');
+      when.className = 'hist-when';
+      when.textContent = histTime(e.at);
+
+      row.append(name, state, when);
+      line.appendChild(row);
+      box.appendChild(line);
+    }
+
+    frag.appendChild(box);
+  }
+
+  body.appendChild(frag);
+  paintHistFoot();
+}
+
+/** Silme düğmesi ve seçim sayacı; dil değişiminde de buradan tazeleniyor. */
+function paintHistFoot() {
+  const n = histSel.size;
+  $('#histDelete').disabled = n === 0;
+  $('#histDelete').textContent = n ? `${t('del.button')} (${n})` : t('del.button');
+}
+
+async function openHistory() {
+  closeSettings();
+  histCache = (await chrome.runtime.sendMessage({ type: 'getHistory' })) || [];
+  // Seçim ekranla birlikte açılıp kapanıyor: bir önceki açılıştan kalan seçimle
+  // "sil"e basmak, kullanıcının görmediği dosyaları silmek olurdu.
+  histSel.clear();
+  hideConfirm();
+  $('#histNote').textContent = '';
+  renderHistory();
+  $('#historyView').classList.add('open');
+}
+
+function closeHistory() {
+  $('#historyView').classList.remove('open');
+  hideConfirm();
+}
+
+// --- indirilen dosyaları silme ---------------------------------------------
+// Geri alınamaz olduğu için iki adım: önce onay barı, sonra silme. Tarayıcının
+// confirm()'ü popup'ta güvenilmez — engellenebiliyor ve popup'ı kapatabiliyor.
+
+function hideConfirm() {
+  $('#histConfirm').classList.add('hidden');
+  $('#histFoot').classList.remove('hidden');
+}
+
+$('#histBody').addEventListener('change', (e) => {
+  const box = e.target;
+
+  if (box.classList.contains('hist-pick')) {
+    const id = +box.dataset.id;
+    if (box.checked) histSel.add(id);
+    else histSel.delete(id);
+    // Grup kutusu artık "hepsi seçili" olmayabilir; satırları yeniden çizmeden
+    // sadece başlıkları eşitliyoruz.
+    syncGroupBoxes();
+    paintHistFoot();
+    return;
+  }
+
+  if (box.classList.contains('hist-pick-all')) {
+    const group = box.closest('.hist-group');
+    group.querySelectorAll('.hist-pick:not(:disabled)').forEach((p) => {
+      p.checked = box.checked;
+      if (box.checked) histSel.add(+p.dataset.id);
+      else histSel.delete(+p.dataset.id);
+    });
+    paintHistFoot();
+  }
+});
+
+/** Grup kutusu, altındaki tüm satırlar seçiliyse dolu görünmeli. */
+function syncGroupBoxes() {
+  $('#histBody')
+    .querySelectorAll('.hist-group')
+    .forEach((group) => {
+      const picks = [...group.querySelectorAll('.hist-pick:not(:disabled)')];
+      const box = group.querySelector('.hist-pick-all');
+      if (box) box.checked = picks.length > 0 && picks.every((p) => p.checked);
+    });
+}
+
+$('#histDelete').addEventListener('click', () => {
+  if (!histSel.size) return;
+  $('#histConfirmText').textContent = t('del.confirm', { n: histSel.size });
+  $('#histFoot').classList.add('hidden');
+  $('#histConfirm').classList.remove('hidden');
+});
+
+$('#histNo').addEventListener('click', hideConfirm);
+
+$('#histYes').addEventListener('click', async () => {
+  const ids = [...histSel];
+  $('#histYes').disabled = true;
+  $('#histConfirmText').textContent = t('del.working');
+
+  const res = await chrome.runtime.sendMessage({ type: 'deleteFiles', ids });
+
+  $('#histYes').disabled = false;
+  hideConfirm();
+  histSel.clear();
+
+  // Silinen kayıtlar artık `deleted`; listeyi worker'dan tazeleyip çiziyoruz.
+  histCache = (await chrome.runtime.sendMessage({ type: 'getHistory' })) || [];
+  renderHistory();
+
+  const failed = res?.failed || [];
+  const gone = res?.gone || 0;
+  $('#histNote').textContent = !gone
+    ? t('del.none')
+    : failed.length
+      ? t('del.partial', { n: gone, f: failed.length })
+      : t('del.done', { n: gone });
+
+  // Neden silinemediğini söylemek şart: kullanıcı aksi hâlde dosyanın gittiğini
+  // sanır. İlk gerekçe yeterli, hepsini sıralamak satırı okunmaz yapardı.
+  if (failed.length) $('#histNote').textContent += ' — ' + delError(failed[0].code);
+  $('#histNote').classList.toggle('warn', failed.length > 0);
+});
+
+/**
+ * Köprünün gerekçe kodunu çevrilmiş cümleye çevirir.
+ * Anahtarı `'del.err.' + code` diye kurmak cazip ama tehlikeli: tanımadığımız
+ * bir kod gelse `t()` anahtarın kendisini döndürür ve kullanıcı arayüzde ham
+ * `del.err.xxx` görür. Bilinmeyen her şey genel hataya düşüyor.
+ */
+function delError(code) {
+  switch (code) {
+    case 'outside':
+      return t('del.err.outside');
+    case 'notfile':
+      return t('del.err.notfile');
+    case 'notabs':
+      return t('del.err.notabs');
+    case 'nobridge':
+      return t('del.err.nobridge');
+    default:
+      return t('del.err.oserr');
+  }
+}
+
+// Yan panelde aç. `sidePanel.open()` kullanıcı hareketi istiyor, o yüzden
+// worker'a uğramadan doğrudan buradan çağrılıyor — mesaj turu hareketi
+// kaybettirebiliyor. Ardından açılır pencereyi kapatıyoruz: ikisi aynı anda
+// durursa iki canlı tarayıcı aynı sekmeyi yarıştırır ve biri ötekinin kirli
+// bayrağını yer — gezmede yaşadığımız sorunun aynısı.
+$('#pin').addEventListener('click', async () => {
+  try {
+    await chrome.sidePanel.open({ windowId: tab.windowId });
+  } catch (e) {
+    console.warn('[panel]', e.message);
+    return;   // açılamadıysa popup'ı kapatmıyoruz, kullanıcı ortada kalmasın
+  }
+  window.close();
+});
+
+$('#histBtn').addEventListener('click', () => {
+  if ($('#historyView').classList.contains('open')) closeHistory();
+  else openHistory();
+});
+
+$('#histBack').addEventListener('click', closeHistory);
+$('#histSearch').addEventListener('input', renderHistory);
+
+$('#histBody').addEventListener('click', (e) => {
+  const page = e.target.closest('.hist-page');
+  if (page?.dataset.url) {
+    chrome.tabs.create({ url: page.dataset.url });
+    return;
+  }
+
+  const row = e.target.closest('.hist-file');
+  if (!row || row.dataset.gone) return;   // silinmiş dosyada gösterilecek bir şey yok
+
+  // Ara klasöre inip köprüyle taşınan dosyalarda Chrome'un kaydı ARTIK YANLIŞ
+  // yeri gösteriyor: `show` boşalmış (çoğu zaman silinmiş) ara klasörü açardı.
+  // Onun yerine gerçek yolu yazıyoruz.
+  if (row.dataset.move) {
+    $('#histNote').textContent = t('hist.movedTo', { path: row.dataset.move });
+    return;
+  }
+
+  try {
+    chrome.downloads.show(+row.dataset.id);
+  } catch {
+    // Kullanıcı Chrome'un indirme geçmişini temizlemişse kayıt yok; sessiz geç.
+  }
+});
+
+$('#histClear').addEventListener('click', async () => {
+  await chrome.runtime.sendMessage({ type: 'clearHistory' });
+  histCache = [];
+  histSel.clear();          // kaydı kalmayan kimlikleri seçili tutmanın anlamı yok
+  hideConfirm();
+  renderHistory();
+  $('#histNote').textContent = t('hist.cleared');
+  $('#histNote').classList.remove('warn');
+});
+
 // --- toplu indirme ilerlemesi ----------------------------------------------
 // Kuyruk service worker'da işliyor; popup kapansa da sürüyor. Bu yüzden durumu
 // açılışta bir kez soruyoruz, sonrası canlı mesajla geliyor.
@@ -892,8 +1490,37 @@ chrome.runtime.onMessage.addListener((msg) => {
 });
 
 $('#download').addEventListener('click', async () => {
-  const items = all.filter((m) => selected.has(m.url)).map((m) => ({ url: m.url, kind: m.kind }));
-  if (!items.length) return;
+  const picked = all.filter((m) => selected.has(m.url));
+  if (!picked.length) return;
+
+  // Manifestler (.mpd/.m3u8) chrome.downloads'a gitmemeli: inen şey birkaç
+  // kilobaytlık bir XML/metin listesi olurdu, video değil. Onları yt-dlp'ye
+  // yolluyoruz — parçaları o indirip birleştiriyor.
+  const manifests = picked.filter((m) => MANIFEST_EXT.test(m.url));
+  const items = picked
+    .filter((m) => !MANIFEST_EXT.test(m.url))
+    .map((m) => ({ url: m.url, kind: m.kind }));
+
+  if (manifests.length) {
+    const res = await chrome.runtime.sendMessage({
+      type: 'ytdlp',
+      action: 'queue',
+      urls: manifests.map((m) => m.url),
+      mode: $('#ytMode').value,
+      // Çıplak CDN adresleri çoğu zaman referer'sız reddediliyor.
+      referer: tab.url || ''
+    });
+    manifests.forEach((m) => done.add(m.url));
+    if (!items.length) {
+      selected.clear();
+      persist();
+      render(true);
+      const btn = $('#download');
+      btn.textContent = t('btn.queuedYt', { n: res?.count || manifests.length });
+      setTimeout(() => (btn.textContent = t('footer.download')), 2400);
+      return;
+    }
+  }
 
   let host = 'indirilenler';
   try {
@@ -908,7 +1535,8 @@ $('#download').addEventListener('click', async () => {
     type: 'download',
     items,
     host,
-    title: tab.title || ''   // şablondaki {title} için
+    title: tab.title || '',   // şablondaki {title} için
+    pageUrl: tab.url || ''    // geçmişte "hangi sayfadan" için
   });
 
   if (res?.ok) {
@@ -978,6 +1606,10 @@ function renderYtStatus(s) {
   else if (s.percent === 100) text = t('yt.downloaded');
   else text = s.line || '';   // iptal gibi tek seferlik bilgiler
 
+  // Kuyrukta bekleyen varsa söyle: beş akış seçip birinin ilerlediğini görmek,
+  // ötekilerin unutulduğu izlenimi verirdi.
+  if (running && s.left > 0) text += ' · ' + t('yt.left', { n: s.left });
+
   ytBusy = running;
   $('#ytBarFill').style.width = (s.percent || 0) + '%';
   $('#ytLine').textContent = text;
@@ -999,9 +1631,56 @@ function collectVideoMeta() {
   const v = document.querySelector('video');
   const adShowing = !!document.querySelector('.html5-video-player.ad-showing');
 
+  const abs = (u) => {
+    try {
+      return u ? new URL(u, document.baseURI).href : '';
+    } catch {
+      return '';
+    }
+  };
+
+  // JSON-LD'de kapak genelde VideoObject.thumbnailUrl altında. Yapı siteden
+  // siteye değiştiği için ağacı geziyoruz; derinlik sınırı olmadan devasa bir
+  // JSON'da takılabilirdik.
+  const fromLd = () => {
+    const dig = (o, depth) => {
+      if (!o || typeof o !== 'object' || depth > 6) return '';
+      const tn = o.thumbnailUrl || o.thumbnail?.contentUrl || o.thumbnail?.url;
+      if (typeof tn === 'string') return tn;
+      if (Array.isArray(tn) && typeof tn[0] === 'string') return tn[0];
+      for (const v of Object.values(o)) {
+        const r = dig(v, depth + 1);
+        if (r) return r;
+      }
+      return '';
+    };
+    for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+      try {
+        const r = dig(JSON.parse(s.textContent), 0);
+        if (r) return r;
+      } catch {
+        // Bozuk JSON-LD yaygın; sessizce sonrakine geçiyoruz.
+      }
+    }
+    return '';
+  };
+
   return {
     title: meta('meta[property="og:title"]') || meta('meta[name="twitter:title"]') || document.title,
-    thumb: meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]'),
+    // Tek bir kaynağa güvenmiyoruz: YouTube dışındaki sitelerin bir kısmında
+    // og:image ya hiç yok ya da CDN'i eklenti bağlamından gelen isteği
+    // reddediyor. Sırayla denenmek üzere aday listesi döndürüyoruz.
+    //
+    // `poster` başta: sayfanın oynatıcısı onu ZATEN yüklemiş oluyor, yani hem
+    // kesinlikle bu videoya ait hem de kesinlikle çizilebilir.
+    thumbs: [
+      abs(v?.getAttribute('poster')),
+      abs(meta('meta[property="og:image"]')),
+      abs(meta('meta[name="twitter:image"]')),
+      abs(meta('meta[property="og:image:secure_url"]')),
+      abs(fromLd()),
+      abs(meta('link[rel="image_src"]', 'href'))
+    ].filter((u, i, a) => u && a.indexOf(u) === i),
     author:
       meta('link[itemprop="name"]') ||
       meta('meta[itemprop="author"]') ||
@@ -1080,9 +1759,30 @@ let probed = false;
 
 // Gezinmede yeniden çağrılıyor (YouTube'da sonraki videoya geçmek gibi):
 // başlık, kapak ve site bilgisi her seferinde sıfırdan kuruluyor.
+/** Bilinen bir akış sitesi değilse başlık olarak alan adını kullanıyoruz. */
+function hostLabel(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Sayfada parçalı akış var mı? Manifest dosyası ya da `blob:` video, ikisi de
+ * "bu videoyu ızgaradan indiremezsin" demek — tek çıkış yolu yt-dlp.
+ */
+const streamHere = () => manifestSeen || blobSeen > 0;
+
 async function initYt() {
   const forUrl = tab?.url || '';
-  const site = siteName(forUrl);
+  const known = siteName(forUrl);
+
+  // Bar eskiden YALNIZCA STREAM_SITES listesindeki sitelerde çıkıyordu. Oysa
+  // DASH/HLS her sitede olabiliyor ve o sayfalarda kullanıcı üç işe yaramaz
+  // kart görüp indirebileceğini sanıyordu. Parçalı akış tespit edildiyse bar
+  // artık listeye bakmadan açılıyor: yt-dlp zaten site listesiyle sınırlı değil.
+  const site = known || (streamHere() ? hostLabel(forUrl) : null);
   if (!site) {
     $('#ytbar').classList.add('hidden');
     return;
@@ -1105,7 +1805,7 @@ async function initYt() {
   // videoda kalabiliyor, id ise her zaman doğru.
   const id = youtubeId(forUrl);
   if (id) setThumb(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`);
-  else $('#ytThumb').removeAttribute('src');   // og:image aşağıda gelirse konur
+  else setThumb([]);   // adaylar aşağıda syncYtMeta'dan gelecek
 
   await syncYtMeta(forUrl, site);
 }
@@ -1149,15 +1849,39 @@ async function syncYtMeta(forUrl, site) {
   }
 
   if (title) $('#ytTitle').textContent = title;
-  if (!id && info.thumb) setThumb(info.thumb);
+  // YouTube'da kapak kimlikten türetiliyor (yukarıda); ötekilerde sayfadan
+  // toplanan adaylar sırayla deneniyor.
+  if (!id) setThumb(info.thumbs);
   $('#ytSub').textContent = [author, dur].filter(Boolean).join(' · ') || site;
 }
 
-function setThumb(src) {
+let thumbTried = '';   // en son denenen aday listesi (titremeyi önlemek için)
+
+/**
+ * Kapağı sırayla dener. Tek bir adres yerine liste alıyor çünkü YouTube dışında
+ * ilk aday sık sık çizilemiyor: ya meta etiketi yok ya da CDN eklenti
+ * bağlamından gelen isteği reddediyor. Hepsi düşerse `src` kalkıyor ve CSS'teki
+ * gri ▶ döşemesi görünüyor — kırık resim ikonu değil.
+ */
+function setThumb(list) {
+  const cands = (Array.isArray(list) ? list : [list]).filter(Boolean);
+  const key = cands.join('|');
+  if (key === thumbTried) return;   // aynı liste: yeniden yükleyip titretme
+  thumbTried = key;
+
   const img = $('#ytThumb');
-  if (img.getAttribute('src') === src) return;   // aynı kapak: yeniden yükleyip titretme
-  img.onerror = () => img.removeAttribute('src');   // kutu boş görünsün, kırık ikon değil
-  img.src = src;
+  if (!cands.length) {
+    img.onerror = null;
+    img.removeAttribute('src');
+    return;
+  }
+
+  let i = 0;
+  img.onerror = () => {
+    if (++i < cands.length) img.src = cands[i];
+    else img.removeAttribute('src');
+  };
+  img.src = cands[0];
 }
 
 /** Köprü eksiklerini bildirir. Sadece indirmeyi engelleyecek/kısıtlayacak olanları. */
@@ -1206,6 +1930,7 @@ function applyLang(lang) {
 
   applyStaticI18n();
   applyTileSize(+$('#size').value);   // "n sütun"
+  paintSweep();                       // düğme metni + son gezme sonucu
 
   if (scanError) drawScanError();
   else render(true);                 // kart etiketleri + sayaçlar
@@ -1214,6 +1939,9 @@ function applyLang(lang) {
   renderDl(lastProg);
   if (lastYtStatus) renderYtStatus(lastYtStatus);
   if ($('#settingsView').classList.contains('open')) showFolder();   // klasör notu da çeviriyle üretiliyor
+  // Geçmiş listesinin tamamı JS'in ürettiği metin (durum etiketleri, "n dosya",
+  // tarih biçimi); applyStaticI18n bunların hiçbirini göremez.
+  if ($('#historyView').classList.contains('open')) renderHistory();
   if (tab) initYt();                 // video kartındaki yedek başlık
 }
 
@@ -1260,12 +1988,37 @@ $('#langs').addEventListener('click', (e) => {
   const { folderMsg } = await chrome.storage.session.get('folderMsg');
   if (folderMsg) openSettings();
 
+  // Yan panel de açılır pencere de "o pencerenin aktif sekmesi"ne bakıyor.
+  // Panel bir sekme değil, penceresine kenetli bir kap; bu sorgu ona da doğru
+  // cevabı veriyor.
   [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  // Panel açık kalıp kullanıcı sekme değiştirdiğinde bakılan sayfa da değişmeli
+  // — kenetli olduğu pencereyi izliyor. Açılır pencerede böyle bir şey olamaz,
+  // o zaten sekme değişince kapanmış oluyor.
+  if (IN_PANEL) {
+    $('#pin').classList.add('hidden');   // zaten paneldeyiz
+    chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+      if (!tab || tabId === tab.id) return;
+      try {
+        // Sekme DEĞİŞTİRME, sekmenin gezinmesi değil: süren bir gezme varsa
+        // durdurmuyoruz. Gezme bir sekmeye ait ve arka planda sürüyor;
+        // kullanıcının başka sekmeye bakması onu iptal etmemeli.
+        await navigated(await chrome.tabs.get(tabId), true);
+      } catch {
+        // Sekme o arada kapanmış olabilir; bir sonraki değişimde toparlanır.
+      }
+    });
+  }
 
   // Önceki seçimleri geri yükle (popup kapanıp açılmış olabilir).
   const saved = await chrome.storage.session.get([keySel(), keyDone()]);
   selected = new Set(saved[keySel()] || []);
   done = new Set(saved[keyDone()] || []);
+
+  // Gezme worker'da sürüyor olabilir: popup kapalıyken başlatılmış olabileceği
+  // gibi, bu açılıştan önce bitmiş de olabilir. Düğmeleri ona göre çiziyoruz.
+  await refreshSweep();
 
   await refresh(true);
   await initYt();

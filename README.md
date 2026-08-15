@@ -23,18 +23,46 @@ After changing code, hit the reload (⟳) button on `chrome://extensions`. For
 ## Usage
 
 - **Click the icon** → the page is scanned, media found is listed in a grid
+- 📌 **opens the same UI in Chrome's side panel, which does not close when you
+  click elsewhere.** The action popup closes the moment it loses focus and no API
+  can prevent that; the side panel isn't subject to the rule — it stays docked
+  next to the page until you close it. The panel follows whichever tab you are
+  looking at, and switching tabs does **not** cancel a sweep running on another
+  tab. It is the same `popup.html`, opened via `side_panel.default_path` with
+  `?panel=1`, laid out for a narrower, resizable column
 - The list stays **live** while the popup is open: as you scroll and new
   images/videos load, cards append themselves (flashing a green border for a
   moment). Navigating the tab to another page/video resets and rebuilds the list
   — no need to close and reopen the popup
 - Click cards to select; `Select all` / `Invert` for bulk selection
-- **Different qualities of the same video collapse into one card**
-  (`clip_360p.mp4`, `clip_720p.mp4`, `clip_1080p.mp4` → a single card). The card
-  shows the best quality; the arrow at the bottom right opens the list so you can
+- **Different qualities of the same video collapse into one card.** Two signals
+  decide this, and both are *certain* rather than guesses: sources that sit under
+  the same `<video>` element (the DOM says they are one video, so the URLs need
+  no quality stamp at all — this is what handles hashed CDN paths like
+  `…/a3f9c1.mp4?token=…`), and URLs that differ only by an expiring signature.
+  Where neither applies the old cautious rule still holds — a quality stamp in
+  the URL (`clip_360p.mp4`, `clip_720p.mp4`, `clip_1080p.mp4` → a single card),
+  and no stamp means no grouping. The card shows the best quality; the arrow at the bottom right opens the list so you can
   pick a specific one. Clicking the card body selects the best quality, and
   `Select all` takes one file per card — so you don't download the same video
   three times
-- Filters at the top: type (image/video), URL search, minimum width
+- **Sweep page** scrolls an infinite-scroll gallery for you, a screen at a time,
+  picking up everything that lazy-loads on the way down. It stops on its own
+  when the page stops growing and no new media arrives, and puts you back where
+  you were when it finishes. Press it again to stop early. **The sweep runs in
+  the service worker, so you can close the popup and let it work** — whatever it
+  finds is waiting for you in the grid when you open it again
+- **Sweep right** presses the right arrow key on the page instead of scrolling —
+  for slideshows and lightbox galleries that advance one image at a time. It
+  stops once no new media has arrived for a few presses. Note that the page is
+  **not** rewound afterwards: we pressed a key rather than scrolling, and
+  pressing left the same number of times would assume we know what the site did
+  with it. Only one sweep runs at a time; starting one disables the other
+- Filters at the top: type (image/video), **network**, URL search, minimum width.
+  The `Network` chip filters by *source* rather than type: it shows only media
+  captured from network traffic — the JS-fetched files that never appear in the
+  page DOM — and includes both images and video. Handy after a sweep, where a lot
+  of what turns up arrives that way. The cards themselves carry a `network` tag
 - The **slider** sets card size (2–7 columns); your choice is remembered
 - The grid renders progressively: first 50 cards, then 50 more as you scroll
 - Selections and "downloaded" marks are remembered per tab, even if the popup closes
@@ -45,6 +73,19 @@ After changing code, hit the reload (⟳) button on `chrome://extensions`. For
   closed, the same number shows as a **badge on the extension icon** — the queue
   keeps working in the background
 - **Right-click** any image or video → "Download this media" (single file, fast path)
+- 🕘 opens the **download history**, grouped by the page each file came from —
+  Chrome's own download list knows the file's source URL but not the page you
+  found it on. Click a page heading to reopen it in a new tab, or a file row to
+  reveal it in its folder. Searchable, and clearable from the bottom bar. The
+  last 500 entries are kept in `storage.local`, so they survive a browser restart
+- **Deleting downloaded files.** Tick the checkbox on any history row (or the one
+  next to a page heading to take everything from that page) and press
+  `Delete selected files`. A confirmation bar appears first — this deletes the
+  files **from disk** and cannot be undone. Files under Downloads go through
+  `chrome.downloads.removeFile`; files the bridge moved outside Downloads are
+  deleted by the bridge, because Chrome's record points at the staging folder
+  they no longer live in. Deleted rows stay in the list, struck through, so you
+  keep the record of which page they came from
 - Two flags in the header switch the interface language between **Turkish and
   English**; the choice is remembered. Chrome's own `chrome.i18n` follows the
   browser language and can't be switched at runtime, so the strings live in
@@ -148,12 +189,31 @@ The probe uses `saveAs: false`. Without stating that explicitly, Chrome's own
 dialog **named `download.txt`** (with a `data:` URL Chrome also swallows our
 filename suggestion).
 
-## yt-dlp bridge (YouTube, Instagram, TikTok, X…)
+## yt-dlp bridge (YouTube, Instagram, TikTok, X… and any segmented stream)
 
 Streaming sites don't serve video as a single file: they use segmented DASH/HLS
 streams plus signed URLs. Solving that inside the extension would mean rewriting
 yt-dlp, and it would break every time a site changed. Instead the extension calls
 the yt-dlp on your machine through Chrome's **Native Messaging** bridge.
+
+The bar appears on the known streaming sites, and **on any page where a segmented
+stream is detected** — an `.mpd`/`.m3u8` in the media list, or a `blob:` video.
+Those pages used to show only the raw pieces with no way to act on them: a DASH
+stream lands in the grid as three entries that each look downloadable but aren't —
+the manifest (a playlist file), a video-only track and an audio-only track. They
+are deliberately *not* merged into one card, because they are not qualities of one
+video: picking one would hand you a silent video or a picture-less audio file. The
+notice line says so, and the bar above downloads the whole thing properly merged.
+
+**Selecting a manifest in the grid sends it to yt-dlp instead of the download
+queue.** Manifest cards carry a `stream` tag rather than `network`, and picking
+one and pressing `Download selected` queues it for the bridge — downloading it as
+a plain file would have produced a few kilobytes of XML. That is how you get every
+video off a page that hosts several: tick all the `.mpd`/`.m3u8` cards at once.
+The bridge runs one download at a time, so the extra ones queue up and start as
+each finishes; the status line shows how many are still waiting. Cancel clears the
+whole queue rather than just the current item, and the page URL rides along as
+`--referer`, since bare CDN manifest URLs are often refused without one.
 
 ### Setup
 
@@ -210,8 +270,20 @@ On YouTube the title, channel and duration come from the **oEmbed** endpoint
 microformat tags get stuck on the previous video during SPA navigation, so they
 reported the wrong title and channel; the thumbnail always looked right because
 it's derived from the video ID in the URL, which is exactly what made the bug
-confusing. Other sites still use `og:` tags. The bar only shows a warning line
-when something would actually block a download (no yt-dlp, no JS runtime).
+confusing. The bar only shows a warning line when something would actually block
+a download (no yt-dlp, no JS runtime).
+
+Outside YouTube the cover is looked for in several places and tried **in order**,
+because relying on `og:image` alone left the bar showing its grey placeholder on
+a lot of sites — the tag is sometimes missing, and sometimes the CDN refuses the
+request once it comes from the extension. The order is: the player's own
+`<video poster>` (the page has already loaded it, so it is guaranteed to render),
+`og:image`, `twitter:image`, `og:image:secure_url`, `thumbnailUrl` out of any
+JSON-LD `VideoObject`, then `<link rel="image_src">`. Relative URLs are resolved
+against the page. Each candidate that fails to load falls through to the next; if
+they all fail the grey ▶ placeholder stays rather than a broken-image icon. The
+`<img>` also carries `referrerpolicy="no-referrer"`, since some CDNs reject a
+foreign referrer but allow none at all.
 
 The bridge's "are you installed?" answer (`probe`) arrives as its own message
 type, not inside the download status. In the version where both rode in the same
@@ -227,7 +299,7 @@ the popup was closed and reopened.
 
 | File | Job |
 |---|---|
-| `manifest.json` | Permissions and entry points |
+| `manifest.json` | Permissions and entry points (popup + `side_panel`) |
 | `background.js` | Service worker: download queue, context menus, network listener |
 | `scanner.js` | DOM scanner injected into the page |
 | `popup.html/css/js` | Grid UI, filters, selection |
@@ -253,6 +325,16 @@ the popup was closed and reopened.
   Under MV3 the observational side of webRequest still works — only the blocking
   side was removed. Captures accumulate under `net:{tabId}`; if the popup is open,
   the background also announces them immediately with a `netAdded` message.
+- While a sweep is running, a URL change **within the same host** is treated as
+  moving through the gallery rather than as navigation. Slideshows and lightboxes
+  push a new URL for every image (`/album/1` → `/album/2`); counting that as
+  navigation would wipe the collected list on every step and cancel the sweep
+  itself. This applies on both sides: the popup keeps its grid, and the worker
+  skips the `tabs.onUpdated` cleanup for the tab being swept — otherwise it was
+  clearing the network-capture buffer before its 600 ms debounce had flushed, so
+  captures never reached the popup at all. A change of host still resets
+  everything and stops the sweep, and when no sweep is running any URL change
+  resets as before.
 - The live list is fed from two sources: that `netAdded` message, and a poll the
   popup runs every 1.2 s. Scanning the whole DOM on every poll would be expensive
   (the `getComputedStyle` loop especially), so `scanner.js` installs a
@@ -269,6 +351,43 @@ the popup was closed and reopened.
   read-modify-write updates would be lost. Only downloads the extension started
   are counted (their IDs are recorded), otherwise the user's own downloads would
   pollute the counter.
+- The side panel runs the same `popup.html` with `?panel=1`, which only switches
+  the layout and turns on tab-following (`tabs.onActivated`). Opening it closes
+  the action popup — two live scanners polling the same tab would race over the
+  page's "something changed" flag. Because a sweep belongs to a *tab*, the panel
+  only shows "Stop" when the running sweep is on the tab currently being viewed,
+  and switching tabs never cancels it.
+- The download history lives in `storage.local`, not `storage.session`: the queue
+  and the counter are "work in flight" and are meant to vanish, but a history that
+  disappeared when you closed the browser would be pointless. Entries are opened
+  when a download *starts* (that's when Chrome hands us the ID) and marked
+  done/failed by `onChanged`; both writes share a promise chain for the same
+  reason the counter does. The page a file came from rides along with the queued
+  job, because by the time the download starts the popup may be long gone.
+- Deleting a file is the only irreversible thing either half of this tool does,
+  so the bridge applies three brakes to every path it is handed: the path must be
+  absolute, it must sit **under the save folder or Downloads** (the extension
+  sends those roots with every request), and it must be a plain file — never a
+  directory, and never a symlink, since a link pointing at a folder would pass an
+  `isfile` test and take the folder with it. A path that is already gone counts
+  as success, so a batch containing a file you deleted by hand doesn't come back
+  red. None of these brakes should be loosened for convenience.
+- The page sweep runs in the **service worker**, not the popup: the injected
+  function performs a single step and reports back, and the worker also runs the
+  scan after each step, accumulating what it finds under `swept:{tabId}`. Nothing
+  keeps running inside the page itself, and stopping is just a flag. The worker
+  is kept alive while sweeping by the same mechanism yt-dlp downloads use. This
+  is also what makes the sweep survive the popup closing — and it fixes a
+  subtler problem: when the popup ran its own scan in parallel, whichever side
+  scanned first cleared the page's "something changed" flag and the other got
+  `unchanged`, so slides could go missing. Now the worker is the single scanner
+  during a sweep and pushes what it finds to the popup.
+- Scrolling down stops when the page is at the bottom,
+  has stopped growing and no new media has arrived for five rounds — all three
+  together, because on an infinite feed the page grows a moment *after* it hits
+  the bottom. Sweeping right has no equivalent notion of "the end", so its only
+  signal is whether new media still arrives; it waits seven rounds rather than
+  five, because the next slide can take longer than one round to load.
 - For files headed outside Downloads, the "which download goes where" mapping is
   in `storage.session` too (`moves`) and passes through the same single chain: the
   worker can die before a download finishes, and move information held in memory
@@ -293,6 +412,30 @@ the popup was closed and reopened.
   `chrome.downloads` with your cookies.
 - **`chrome://`, the Web Store and the PDF viewer can't be scanned** — Chrome
   blocks extension injection there.
+- **Files saved under a folder you have since changed away from can't be deleted
+  from the history.** The bridge only deletes below the *current* save folder or
+  Downloads, and it has no way to know a folder you used last month was once
+  legitimate. You get a message saying the file is outside the save folder;
+  delete it by hand.
+- **`Sweep right` only works on sites that handle the arrow key in JavaScript.**
+  The key event it sends is synthetic (`isTrusted: false`), so it wakes up a
+  site's own `keydown` listener — which is how slideshows and lightboxes work —
+  but it does **not** trigger the browser's built-in behaviour. A plain
+  horizontally-scrolling container that relies on the browser to move it will not
+  budge. Sending trusted input would require the `debugger` permission and the
+  banner that comes with it, which is far too invasive for this tool.
+- **The action popup still closes when it loses focus** — that is Chrome's fixed
+  rule and there is no API to opt out. 📌 works around it by moving the UI into
+  the side panel; it does not fix the popup itself. This is also why picking a
+  save folder closes the popup (use the side panel and that annoyance goes away).
+- **Nothing an extension can do floats above other applications.** The side panel
+  is docked inside the browser window, not always-on-top over your desktop —
+  Chrome has no API for that since the old Chrome Apps `alwaysOnTop` was removed.
+- **The page sweep only scrolls the main frame.** Media inside an iframe is
+  still scanned, but scrolling something the user can't see would be the wrong
+  behaviour. The sweep itself survives the popup closing, but not the service
+  worker being killed by the browser; if that happens the state goes stale after
+  15 seconds and the buttons unlock again.
 - **On very large pages some CSS background images may be missed.** The
   `getComputedStyle` sweep is split into chunks and run through
   `requestIdleCallback`, but a single scan round is capped at 3 seconds; if it
@@ -302,10 +445,7 @@ the popup was closed and reopened.
 
 - Referer header injection: a `declarativeNetRequest` `modifyHeaders` rule for
   hotlink-protected sites (MV3 requires this instead of blocking `webRequest`)
-- Auto-scrolling infinite-scroll galleries (scanning is live now; the only missing
-  piece is doing the scrolling for the user)
 - Playlist support in the yt-dlp bar (dropping the `--no-playlist` flag)
-- A download history view (which page did this come from)
 - Firefox support — the `browser.*` APIs are largely the same, but the native
   messaging manifest location and registry differ
 

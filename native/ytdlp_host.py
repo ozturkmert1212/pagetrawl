@@ -299,6 +299,73 @@ def move_file(msg):
             time.sleep(0.5)
 
 
+# --- silme -----------------------------------------------------------------
+# Host'un GERİ ALINAMAZ tek eylemi. Taşıma yanlış giderse dosya durur, indirme
+# yanlış giderse tekrar indirilir — silme öyle değil. O yüzden burada üç ayrı
+# fren var ve hiçbiri "kolaylık olsun" diye gevşetilmemeli.
+
+
+def _under(path, roots):
+    """`path`, roots'tan birinin ALTINDA mı? Kökün kendisi kabul edilmiyor."""
+    p = os.path.normcase(os.path.abspath(os.path.normpath(path)))
+    for r in roots:
+        if not r:
+            continue
+        rr = os.path.normcase(os.path.abspath(os.path.normpath(r)))
+        if p.startswith(rr + os.sep):
+            return True
+    return False
+
+
+def delete_files(msg):
+    """
+    Verilen mutlak yolları siler ve tek bir toplu cevap döner.
+
+    Neden eklenti kendi silemiyor: `chrome.downloads.removeFile` yalnızca
+    Chrome'un kaydettiği yerdeki dosyayı siler. Köprüyle İndirilenler dışına
+    taşınmış dosyalarda o kayıt artık yanlış yeri gösteriyor, dolayısıyla
+    silmeyi de yerel süreç yapmak zorunda.
+    """
+    roots = [r for r in (msg.get("roots") or []) if r]
+    done, failed = [], []
+
+    for raw in (msg.get("paths") or []):
+        path = os.path.normpath(raw or "")
+        try:
+            if not path or not os.path.isabs(path):
+                raise ValueError("notabs")
+
+            # 1. Fren: kayıt klasörünün (ya da İndirilenler'in) altı olmak
+            # zorunda. Yol bizim kendi defterimizden gelse bile dışarı çıkan
+            # hiçbir şeye dokunmuyoruz — kalan tek koruma bu.
+            if not roots or not _under(path, roots):
+                raise ValueError("outside")
+
+            # Dosya zaten yok: kullanıcının istediği sonuç bu, hata değil.
+            # Bu kontrol `notfile`'dan ÖNCE gelmek zorunda — sonra gelseydi
+            # elle silinmiş bir dosya partiyi kırmızıya boyardı.
+            if not os.path.exists(path) and not os.path.islink(path):
+                done.append(raw)
+                continue
+
+            # 2. Fren: klasör değil, düz dosya. `islink` ayrıca kontrol ediliyor
+            # çünkü bir klasöre işaret eden sembolik bağ `isfile` testini
+            # geçebilir ve silmek klasörü silmek anlamına gelirdi.
+            if os.path.islink(path) or not os.path.isfile(path):
+                raise ValueError("notfile")
+
+            os.remove(path)
+            done.append(raw)
+        except ValueError as e:
+            # 3. Fren: gerekçe koda çevriliyor, cümleye değil — çeviri tablosu
+            # eklentide tek yerde duruyor.
+            failed.append({"path": raw, "code": str(e)})
+        except Exception as e:
+            failed.append({"path": raw, "code": "oserr", "error": str(e)})
+
+    send({"type": "deleted", "ok": not failed, "done": done, "failed": failed})
+
+
 PERCENT_RE = re.compile(r"\[download\]\s+([\d.]+)%")
 
 
@@ -341,6 +408,14 @@ def download(msg):
         "-o", "%(uploader)s - %(title)s [%(id)s].%(ext)s",
     ]
     args += build_format(msg.get("mode", "best"), ffmpeg)
+
+    # Izgaradan seçilen bir manifest (.mpd/.m3u8) çıplak CDN adresi oluyor;
+    # sunucuların çoğu onu referer'sız reddediyor. Sayfa adresini geçiyoruz.
+    # Site sayfasından başlatılan normal indirmelerde bu alan boş geliyor,
+    # yt-dlp kendi çıkarıcısı neyi gerekiyorsa onu yapıyor.
+    referer = msg.get("referer") or ""
+    if referer:
+        args += ["--referer", referer]
 
     if ffmpeg_path:
         args += ["--ffmpeg-location", os.path.dirname(ffmpeg_path)]
@@ -451,6 +526,11 @@ def main():
             # Ayrı thread: başka diske taşıma kopyalama demek, sürebilir. Ana
             # döngü bu sırada yt-dlp'nin iptal mesajını okuyabilmeli.
             threading.Thread(target=move_file, args=(msg,), daemon=False).start()
+
+        elif action == "delete":
+            # Ayrı thread: ağ sürücüsündeki ya da kilitli bir dosya sırayı
+            # bekletebilir; ana döngü bu sırada iptal mesajını okuyabilmeli.
+            threading.Thread(target=delete_files, args=(msg,), daemon=False).start()
 
         elif action == "cancel":
             if _current and _current.poll() is None:

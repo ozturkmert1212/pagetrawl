@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PageTrawl",
-  "version": "1.17.0",
+  "version": "1.27.0",
   "description": "Açık sayfadaki fotoğraf ve videoları listeler, filtreleyip toplu indirir.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -11,8 +11,12 @@
     "contextMenus",
     "tabs",
     "webRequest",
-    "nativeMessaging"
+    "nativeMessaging",
+    "sidePanel"
   ],
+  "side_panel": {
+    "default_path": "popup.html?panel=1"
+  },
   "host_permissions": [
     "<all_urls>"
   ],

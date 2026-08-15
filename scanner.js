@@ -168,16 +168,29 @@ async function collectMedia(force) {
     bgTruncated = true;
   }
 
-  // --- <video> / <audio> ---------------------------------------------------
+  // --- <video> -------------------------------------------------------------
   for (const v of document.querySelectorAll('video')) {
-    add(v.currentSrc || v.src, 'video', {
+    // Bir <video>'nun currentSrc'si ve <source> çocukları TANIM GEREĞİ aynı
+    // videonun farklı kodlamaları (mp4 + webm, ya da farklı çözünürlükler).
+    // Bunu ortak bir `grp` ile işaretliyoruz: popup onları tek kartta
+    // toplarken URL'den kalite damgası çıkarmaya çalışmak zorunda kalmıyor.
+    // Damgasız CDN adreslerinde tek kesin bilgi bu.
+    //
+    // `grp` ilk bulunan adres: tarama turları arasında sabit kalsın, yoksa her
+    // turda yeni bir grup açılır ve kart sürekli yeniden çizilirdi.
+    const srcs = [v.currentSrc || v.src];
+    for (const s of v.querySelectorAll('source')) srcs.push(s.src || s.getAttribute('src'));
+
+    const grp = srcs.find((u) => u && !u.startsWith('blob:')) || '';
+
+    add(srcs[0], 'video', {
       w: v.videoWidth || 0,
       h: v.videoHeight || 0,
-      dur: Math.round(v.duration) || 0
+      dur: Math.round(v.duration) || 0,
+      grp
     });
-    for (const s of v.querySelectorAll('source')) {
-      add(s.src || s.getAttribute('src'), 'video', { w: 0, h: 0 });
-    }
+    for (let i = 1; i < srcs.length; i++) add(srcs[i], 'video', { w: 0, h: 0, grp });
+
     if (v.poster) add(v.poster, 'image', { w: 0, h: 0, poster: true });
   }
 
