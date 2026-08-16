@@ -181,6 +181,11 @@ function qLabel(m) {
  * 2. `variantKey` — damgayı URL'den çıkarma tahmini. Damga yoksa `null`.
  */
 function groupKey(m) {
+  // DRM'li kart hiçbir şeyle gruplanmıyor. İndirilebilir bir kalite listesi
+  // sunmuyor, üstelik yanlışlıkla gerçek bir videoyla eşleşirse o video
+  // kartın altına gömülüp LİSTEDEN KAYBOLURDU — v1.25'in kuralı burada da
+  // geçerli: şüphede kalınca gruplama.
+  if (m.drm) return null;
   if (m.grp) return { key: 'grp:' + m.grp, tag: variantKey(m.url)?.tag || '', sure: true };
   const k = variantKey(m.url);
   return k && { key: k.key, tag: k.tag, sure: false };
@@ -239,6 +244,13 @@ function groupVariants(list) {
 // gelenler sona ekleniyor ki liste gözünün önünde yerinden oynamasın).
 const byUrl = new Map();
 let blobSeen = 0;
+
+// DRM (Widevine) korumalı video sayısı. blobSeen'den AYRI tutuluyor: ikisi de
+// ızgaradan indirilemez ama sıradan blob parçalı akıştır ve yt-dlp onu alır,
+// DRM'li olan şifreli gelir — ne eklenti ne yt-dlp çözebilir. Aynı sayaca
+// katsaydık `streamHere()` true olur ve yt-dlp barı Netflix'te de açılıp
+// tutamayacağı bir söz verirdi.
+let drmSeen = 0;
 
 // Parçalı akış (DASH/HLS) işaretleri. Böyle bir sayfada listede görünen
 // dosyalar TEK BAŞINA işe yaramıyor: `.mpd`/`.m3u8` sadece bir liste dosyası,
@@ -304,6 +316,11 @@ function absorb(items) {
 
 function showNotice() {
   const msgs = [];
+  // DRM en başta: varsa kullanıcının "bu videoyu neden alamıyorum" sorusunun
+  // asıl cevabı bu ve öteki cümleler onun yanında ayrıntı kalıyor.
+  if (drmSeen) {
+    msgs.push(t('notice.drm', { n: drmSeen }));
+  }
   // Bu, blob uyarısından ÖNCE geliyor: kullanıcının gördüğü asıl kafa
   // karışıklığı "tek video ama üç satır" ve cevabı bu cümlede.
   if (manifestSeen) {
@@ -360,17 +377,23 @@ async function refresh(full = false) {
 
     const found = [];
     let blobs = 0;
+    let drms = 0;
     for (const f of frames) {
       const r = f.result;
       if (!r || r.unchanged) continue;   // o çerçevede değişen bir şey yok
       found.push(...r.items);
+      // DRM'liler bu sayının dışında: tarayıcı onları `unsupported`'a hiç
+      // koymuyor, ayrı kart olarak geliyorlar. Karışsalardı bu sayı "yt-dlp
+      // bunları alabilir" diye yanlış bir söz verirdi.
       blobs += r.unsupported.length;
+      drms += r.drm || 0;
       // Arka plan taraması süre bütçesine takıldıysa liste eksik; sustuğumuzda
       // kullanıcı neyin kaçtığını bilemez.
       if (r.bgTruncated) bgTruncated = true;
     }
     // Bu turda taranmayan çerçeveler sayıyı düşük gösterebilir; en yükseği tut.
     blobSeen = Math.max(blobSeen, blobs);
+    drmSeen = Math.max(drmSeen, drms);
 
     // Ağdan yakalananlar (DOM'da hiç görünmeyenler burada çıkar). Sonradan
     // gelenleri arka plan 'netAdded' ile anında yolluyor; burada sadece
@@ -507,6 +530,7 @@ async function navigated(cur, tabSwitch = false) {
   byUrl.clear();
   byKey.clear();   // ikizi olan kayıtların defteri de o sayfaya aitti
   blobSeen = 0;
+  drmSeen = 0;
   manifestSeen = false;
   capped = false;
   all = [];
@@ -551,13 +575,71 @@ function visible() {
   return groupVariants(all.filter(matches));
 }
 
+/**
+ * Seçilebilir mi? DRM'li medyanın indirilecek bir yolu YOK; seçime girerse
+ * "3 dosya seçildi" der, İndir'e basılır ve hiçbir şey inmez.
+ *
+ * Seçim yollarının hepsi buradan geçmeli — dört ayrı yere `if (m.drm)` yazmak,
+ * beşinci yol eklendiğinde unutulacak bir satır demek. Aynı gerekçeyle Esc de
+ * ekranları tek tek saymak yerine `.view.open` arıyor.
+ */
+const pickable = (m) => !m.drm;
+
 function buildCard(m) {
   const card = document.createElement('div');
   // Gruplu kartta seçim varyantlardan herhangi biri olabilir.
   const anySel = (m._vars || [m]).some((v) => selected.has(v.url));
-  card.className = 'card' + (anySel ? ' sel' : '') + (done.has(m.url) ? ' done' : '');
+  card.className =
+    'card' + (anySel ? ' sel' : '') + (done.has(m.url) ? ' done' : '') + (m.drm ? ' drm' : '');
   card.dataset.url = m.url;
-  card.title = m.url;
+  // DRM kartında adresi ipucu yapmak anlamsız: blob: adresi kullanıcıya hiçbir
+  // şey söylemiyor. Onun yerine neden alınamadığını yazıyoruz.
+  card.title = m.drm ? t('drm.cardTitle') : m.url;
+
+  if (m.drm) {
+    // Kapak varsa gerçek küçük resmi göster: kullanıcının hangi videodan
+    // bahsettiğimizi anlaması için tek ipucu o. Kapak da yoksa ▶ döşemesi.
+    if (m.poster) {
+      const img = document.createElement('img');
+      img.className = 'thumb';
+      img.loading = 'lazy';
+      img.src = m.poster;
+      img.onerror = () => {
+        const ph = document.createElement('div');
+        ph.className = 'ph video';
+        ph.textContent = '▶';
+        img.replaceWith(ph);
+      };
+      card.appendChild(img);
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'ph video';
+      ph.textContent = '▶';
+      card.appendChild(ph);
+    }
+
+    const lock = document.createElement('span');
+    lock.className = 'lock';
+    lock.textContent = '🔒';
+    card.appendChild(lock);
+
+    const tag = document.createElement('span');
+    tag.className = 'tag drm';
+    tag.textContent = t('tag.drm');
+    tag.title = t('drm.cardTitle');
+    card.appendChild(tag);
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const label = document.createElement('span');
+    label.className = 'mtext';
+    const dims = m.w && m.h ? `${m.w}×${m.h} · ` : '';
+    label.textContent = dims + t('drm.locked');
+    meta.appendChild(label);
+    card.appendChild(meta);
+
+    return card;   // seçim kutusu (tick) YOK: seçilemeyen kartta yanıltıcı olurdu
+  }
 
   // Video için poster yok; uzantıyı gösteren sade bir döşeme koyuyoruz.
   if (m.kind === 'image') {
@@ -818,6 +900,16 @@ grid.addEventListener('scroll', () => {
 });
 
 function updateCounts() {
+  // Bayat seçim temizliği. Kartı kilitli çizmek tek başına yetmiyor: bir adres
+  // seçildikten SONRA da DRM'li çıkabiliyor (düz bir https kaynağı seçilir,
+  // sonraki turda `mediaKeys` dolar; ya da seçim oturum deposundan geri
+  // yüklenir). O adres `selected` içinde kalırsa sayaç onu sayar, İndir düğmesi
+  // açılır ve asla inmeyecek bir dosya kuyruğa girer — kullanıcı da indirmenin
+  // neden sessizce başarısız olduğunu anlamaz.
+  let pruned = false;
+  for (const m of all) if (!pickable(m) && selected.delete(m.url)) pruned = true;
+  if (pruned) persist();   // depodaki kopya da temizlensin, yoksa her açılışta geri gelir
+
   const imgs = all.filter((m) => m.kind === 'image').length;
   const vids = all.length - imgs;
   const total = listCache.length;
@@ -832,6 +924,16 @@ function updateCounts() {
 grid.addEventListener('click', (e) => {
   const card = e.target.closest('.card');
   if (!card) return;
+
+  // DRM'li kart kilitli: tıklama seçim yapmıyor. Sessizce yutmuyoruz da —
+  // tıklayan kullanıcı bir cevap bekliyor, kartın altındaki satır sebebi
+  // söylüyor. Alttaki `cardUrls` yolu buraya hiç ulaşmamalı, yoksa DRM adresi
+  // `selected`'a girer ve İndir düğmesi açılırdı.
+  if (card.classList.contains('drm')) {
+    card.classList.add('nudge');
+    setTimeout(() => card.classList.remove('nudge'), 400);
+    return;
+  }
 
   // Ok: sadece listeyi açıp kapatır, seçime dokunmaz.
   if (e.target.closest('.chev')) {
@@ -882,7 +984,7 @@ $('#minWidth').addEventListener('change', (e) =>
 // Not: bunlar visible() üzerinde çalışıyor, çizilmiş kartlar üzerinde değil —
 // yani "Tümünü seç" henüz aşağıda görünmeyen kartları da kapsıyor.
 $('#selAll').addEventListener('click', () => {
-  visible().forEach((m) => selected.add(m.url));
+  visible().filter(pickable).forEach((m) => selected.add(m.url));
   persist();
   render(true);
 });
@@ -894,7 +996,9 @@ $('#selNone').addEventListener('click', () => {
 });
 
 $('#selInvert').addEventListener('click', () => {
-  visible().forEach((m) => (selected.has(m.url) ? selected.delete(m.url) : selected.add(m.url)));
+  visible()
+    .filter(pickable)
+    .forEach((m) => (selected.has(m.url) ? selected.delete(m.url) : selected.add(m.url)));
   persist();
   render(true);
 });

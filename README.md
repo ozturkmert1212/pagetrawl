@@ -198,6 +198,9 @@ the yt-dlp on your machine through Chrome's **Native Messaging** bridge.
 
 The bar appears on the known streaming sites, and **on any page where a segmented
 stream is detected** — an `.mpd`/`.m3u8` in the media list, or a `blob:` video.
+DRM-protected videos do *not* count as such a signal: yt-dlp can't get those
+either, so the bar stays out of the way instead of promising a download that
+would fail (see [Known limitations](#known-limitations)).
 Those pages used to show only the raw pieces with no way to act on them: a DASH
 stream lands in the grid as three entries that each look downloadable but aren't —
 the manifest (a playlist file), a video-only track and an audio-only track. They
@@ -405,7 +408,14 @@ the popup was closed and reopened.
   the page's memory; it isn't reachable from the extension's context. The popup
   counts such videos and shows a warning.
 - **DRM-protected content (Widevine)** arrives encrypted and is technically
-  unsolvable.
+  unsolvable. Since v1.28 such videos are at least *detected* — via the media
+  element's `mediaKeys` and the `encrypted` event — and shown in the grid as
+  **locked cards**: greyed out, marked with a lock and a `DRM` tag, with no
+  checkbox. They cannot be selected, so "Select all" skips them and they can
+  never reach the download queue. They also get their own notice line, separate
+  from ordinary `blob:` videos, and they no longer open the yt-dlp bar. Listing
+  something undownloadable is deliberate: the question a user actually has is
+  "why can't I get this video?", and silence leaves them blaming their own setup.
 - **Thumbnails may not render.** Sites with hotlink protection reject requests
   coming from the extension context, so you see a file-extension label instead of
   a preview. The file itself can still download, because that goes through

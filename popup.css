@@ -194,6 +194,11 @@ body {
    Ötekilerden ayrı görünmesi şart, çünkü tek gerçekten işe yarayan seçenek o. */
 .tag.stream { background: var(--accent); color: var(--accent-text); }
 
+/* "DRM" etiketi kasten akış etiketiyle AYNI renkte değil: akış "başka bir motor
+   çalışacak" demek, DRM ise "hiçbir motor çalışmayacak". İkisi karışırsa
+   kullanıcı yt-dlp'nin halledeceğini sanır. */
+.tag.drm { background: #b45309; color: #fff; }
+
 /* Yıkıcı eylem: renk tek başına yetmez (renk körlüğü), çerçeve de kırmızı. */
 .danger {
   border: 1px solid #dc2626;
@@ -540,6 +545,37 @@ main {
 /* Yükseklik CSS değişkeninden DEĞİL, kartın gerçek genişliğinden türüyor.
    min-height ise son savunma: aspect-ratio bir sebeple uygulanmazsa bile
    kart bu yüksekliğin altına inemez, yani asla çökmez. */
+/* DRM'li video: ızgarada duruyor ama seçilemiyor. Üç ayrı işaret veriyoruz —
+   soluk küçük resim, kilit ikonu ve kesikli çerçeve. Renk tek başına yetmezdi
+   (renk körlüğü), üstelik burada söylenen şey "bu kart tıklanacak bir şey
+   değil" ve bunun bir bakışta anlaşılması gerekiyor. Seçim kutusu (.tick) bu
+   kartta hiç çizilmiyor: seçilemeyen kartta boş bir kutu yanıltıcı olurdu. */
+.card.drm {
+  cursor: default;
+  border-style: dashed;
+  border-color: var(--border);
+}
+.card.drm .thumb, .card.drm .ph { filter: grayscale(1) brightness(.7); }
+
+.card .lock {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  font-size: 13px;
+  line-height: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .7);
+  pointer-events: none;
+}
+
+/* Kilitli karta tıklayan kullanıcı bir cevap bekliyor: kart bir an titriyor,
+   fare ipucu da sebebi yazıyor. Hiç tepki vermemek "popup dondu" hissi verirdi. */
+.card.nudge { animation: nudge .4s ease; }
+@keyframes nudge {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-3px); }
+  75%      { transform: translateX(3px); }
+}
+
 .card .thumb {
   width: 100%;
   aspect-ratio: 4 / 3;
