@@ -220,6 +220,44 @@ whole queue rather than just the current item, and the page URL rides along as
 
 ### Setup
 
+#### macOS (Apple Silicon and Intel)
+
+PageTrawl runs as a **Google Chrome extension**, not a standalone `.app` or
+Safari extension. Load this folder with **Load unpacked** at
+`chrome://extensions` with Developer mode enabled, then copy PageTrawl's ID.
+
+```bash
+# Install the native bridge dependencies (Homebrew required).
+brew install python yt-dlp ffmpeg deno
+cd /path/to/pagetrawl
+# Replace the example with the 32-character ID shown by Chrome.
+bash setup-native.sh YOUR_EXTENSION_ID
+```
+
+Reload PageTrawl at `chrome://extensions`. No administrator account is needed.
+The installer creates a launcher in `~/Library/Application Support/PageTrawl`
+and registers it in Chrome's per-user `NativeMessagingHosts` directory, following
+[Chrome's native messaging documentation](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging).
+The launcher uses the selected Python's absolute path. Keep the downloader
+folder in place; rerun setup after moving it or replacing Python.
+
+Finder-launched Chrome can find tools in both `/opt/homebrew/bin` (Apple Silicon)
+and `/usr/local/bin` (Intel), plus `~/.local/bin`, `~/.deno/bin`, and `~/.bun/bin`.
+The folder picker uses macOS's native dialog without requiring Tkinter.
+If macOS asks for folder access or System Events automation permission, allow
+access for the folder you want to use. Cancelling the picker leaves it unchanged.
+
+To unregister the bridge: `bash setup-native.sh --uninstall`.
+This preserves downloads and extension settings. Basic browser downloads work
+without the bridge; yt-dlp downloads and moving files outside Chrome's download
+folder require it. This installer targets Google Chrome, not other browsers.
+
+Validation: `python3 -m unittest discover -s native -p 'test_*.py' -v`.
+For a manual check, open PageTrawl on a media page, check the yt-dlp status,
+choose a folder, download a file there, then test cancelling a download.
+
+#### Windows
+
 ```powershell
 # 1. Load the extension, copy its ID from chrome://extensions
 # 2. In this folder:
