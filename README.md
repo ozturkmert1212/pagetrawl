@@ -4,6 +4,14 @@ Trawl the open page for images and videos, filter them, download in bulk.
 A personal-use Chrome extension (Manifest V3, plain JS — no build step), with a
 local yt-dlp bridge for streaming sites.
 
+**Popup view** — browse, filter, and select media from the current page.
+
+![PageTrawl popup showing a grid of images with filters and bulk download controls](docs/screenshots/popup.png)
+
+**Side panel** — keep PageTrawl open while browsing.
+
+![PageTrawl docked in the browser side panel beside Google Images](docs/screenshots/side-panel.png)
+
 ## Install
 
 1. Open `chrome://extensions`
