@@ -136,11 +136,18 @@ const I18N = {
       'Bu sayfadaki video parçalı akış (DASH/HLS). Listedeki .mpd/.m3u8 bir liste dosyası, ' +
       'yanındaki mp4\'ler de ayrı görüntü ve ses parçaları — biri tek başına indirilirse ' +
       'sessiz video ya da görüntüsüz ses olur. Tamamı için üstteki yt-dlp barını kullan.',
+    'notice.drm':
+      '{n} video DRM korumalı (Widevine) — şifreli geldiği için ne eklenti ne de ' +
+      'yt-dlp indirebilir. Izgarada kilitli kart olarak duruyorlar.',
     'notice.blob': '{n} adet blob: video atlandı — bunlar parçalı akış (HLS/DASH) ve eklentiden indirilemez.',
     'notice.capped': "Liste {max} öğede doldu; yeni gelenler eklenmiyor. Seçtiklerini indirip popup'ı yeniden aç.",
     'notice.bgTruncated': 'Sayfa çok büyük olduğu için CSS arka plan görsellerinin bir kısmı taranamadı.',
 
     'tag.net': 'ağ',
+    'tag.drm': 'DRM',
+    'drm.locked': 'indirilemez',
+    'drm.cardTitle':
+      'Bu video DRM korumalı (Widevine): şifreli geldiği için ne eklenti ne de yt-dlp indirebilir.',
     'tag.manifest': 'akış',
     'tag.manifestTitle':
       'Parçalı akışın liste dosyası. Bunu seçip indirirsen yt-dlp çalışır ve ' +
@@ -173,7 +180,7 @@ const I18N = {
     'wk.movesLost': 'Köprü bağlantısı koptuğu için {n} dosya taşınamadı; İndirilenler\\{stage} altındalar.',
     'wk.dlCanceled': 'İndirme iptal edildi.',
     'wk.dlFailed': 'İndirme başarısız oldu (kod {code}).',
-    'wk.bridgeMissing': 'Köprü kurulu değil. Klasörde `.\\setup-native.ps1 -ExtensionId {id}` komutunu çalıştır.',
+    'wk.bridgeMissing': 'Köprü kurulu değil. macOS: `bash setup-native.sh {id}` · Windows: `.\\setup-native.ps1 -ExtensionId {id}`. Eklenti klasöründe çalıştır.',
     'wk.bridgeLost': 'Köprü bağlantısı koptu. İndirme arka planda tamamlanmış olabilir — kayıt klasörüne bak.',
     'wk.cancelNoPort': 'Bağlantı kopmuş olduğu için iptal edilemedi; indirme arka planda sürüyor olabilir.',
     'host.pickdirFailed': 'Klasör penceresi açılamadı: {err}',
@@ -310,11 +317,19 @@ const I18N = {
       'a playlist file and the mp4s next to it are separate video and audio tracks — downloading ' +
       'one on its own gives you a silent video or audio with no picture. Use the yt-dlp bar above ' +
       'to get the whole thing.',
+    'notice.drm':
+      '{n} video(s) are DRM-protected (Widevine) — they arrive encrypted, so neither the ' +
+      'extension nor yt-dlp can download them. They appear in the grid as locked cards.',
     'notice.blob': "Skipped {n} blob: video(s) — these are segmented streams (HLS/DASH) and can't be downloaded from the extension.",
     'notice.capped': 'The list filled up at {max} items; new ones are no longer added. Download your selection and reopen the popup.',
     'notice.bgTruncated': 'The page is very large, so some CSS background images could not be scanned.',
 
     'tag.net': 'network',
+    'tag.drm': 'DRM',
+    'drm.locked': "can't be downloaded",
+    'drm.cardTitle':
+      'This video is DRM-protected (Widevine): it arrives encrypted, so neither the ' +
+      'extension nor yt-dlp can download it.',
     'tag.manifest': 'stream',
     'tag.manifestTitle':
       'The playlist file of a segmented stream. Selecting and downloading this runs yt-dlp, ' +
@@ -347,7 +362,7 @@ const I18N = {
     'wk.movesLost': 'The bridge connection dropped, so {n} file(s) were not moved; they are under Downloads\\{stage}.',
     'wk.dlCanceled': 'Download canceled.',
     'wk.dlFailed': 'Download failed (code {code}).',
-    'wk.bridgeMissing': 'The bridge is not installed. Run `.\\setup-native.ps1 -ExtensionId {id}` in the extension folder.',
+    'wk.bridgeMissing': 'The bridge is not installed. macOS: `bash setup-native.sh {id}` · Windows: `.\\setup-native.ps1 -ExtensionId {id}`. Run in the extension folder.',
     'wk.bridgeLost': 'The bridge connection dropped. The download may have finished in the background — check the save folder.',
     'wk.cancelNoPort': "Couldn't cancel because the connection dropped; the download may still be running in the background.",
     'host.pickdirFailed': "Couldn't open the folder window: {err}",

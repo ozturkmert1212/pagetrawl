@@ -606,7 +606,11 @@ const PROBE_URLS = [
 ];
 
 const dirOf = (p) => p.slice(0, Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')));
-const norm = (p) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+const norm = (p) => {
+  const clean = p.replace(/\\/g, '/').replace(/\/+$/, '');
+  // POSIX volumes can be case-sensitive; never fold distinct Mac paths.
+  return /^[a-z]:/i.test(clean) || clean.startsWith('//') ? clean.toLowerCase() : clean;
+};
 
 function waitDownload(id) {
   return new Promise((resolve) => {

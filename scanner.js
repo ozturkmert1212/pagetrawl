@@ -15,6 +15,7 @@ async function collectMedia(force) {
   if (!W.__mdInit) {
     W.__mdInit = true;          // kurulum bir kez; başarısız olsa da tekrarlanmasın
     W.__mdWatch = { dirty: true };
+    W.__mdDrm = new WeakSet();  // `encrypted` olayı geçmiş <video>'lar
     try {
       new MutationObserver(() => { W.__mdWatch.dirty = true; }).observe(document.documentElement, {
         childList: true,
@@ -28,6 +29,14 @@ async function collectMedia(force) {
         const t = e.target;
         if (t && (t.tagName === 'IMG' || t.tagName === 'VIDEO')) W.__mdWatch.dirty = true;
       }, true);
+      // DRM (EME) tespitinin ilk sinyali: `encrypted`, şifreli içerik görüldüğü
+      // anda medya elemanında ateşleniyor. `load` gibi bubble ETMEDİĞİ için yine
+      // yakalama fazında dinliyoruz. Olay bir kez geçiyor, tarama ise saniyede
+      // bir çalışıyor — o yüzden elemanı kalıcı bir sette tutuyoruz.
+      W.addEventListener('encrypted', (e) => {
+        if (e.target) W.__mdDrm.add(e.target);
+        if (W.__mdWatch) W.__mdWatch.dirty = true;
+      }, true);
     } catch {
       // Gözlemci kurulamadıysa (nadir) her turda tam tarama yapılsın.
       W.__mdWatch = null;
@@ -40,6 +49,7 @@ async function collectMedia(force) {
   const items = [];
   const unsupported = [];
   const seen = new Set();
+  let drmCount = 0;           // DRM (EME) korumalı <video> sayısı
 
   const IMAGE_EXT = /\.(jpe?g|png|gif|webp|avif|bmp|svg|tiff?|heic)(\?|#|$)/i;
   const VIDEO_EXT = /\.(mp4|webm|mov|mkv|avi|m4v|ogv)(\?|#|$)/i;
@@ -60,6 +70,8 @@ async function collectMedia(force) {
     if (url.startsWith('blob:')) {
       // blob: URL'leri yalnızca o sayfanın belleğinde yaşar; eklenti bağlamından
       // indirilemez. Kullanıcıya "yakalandı ama alınamıyor" diye göstereceğiz.
+      // (DRM'li videolar buraya HİÇ gelmiyor — onları `addDrm` ayrı ele alıyor,
+      // çünkü "yt-dlp'yi kullan" tavsiyesi onlar için yanlış olurdu.)
       if (!seen.has(url)) {
         seen.add(url);
         unsupported.push({ url, kind, reason: 'blob' });
@@ -92,6 +104,58 @@ async function collectMedia(force) {
       }
     }
     return best;
+  };
+
+  /**
+   * Video DRM (EME) korumalı mı? İki sinyal birbirini tamamlıyor, ikisi de
+   * KESİN — tahmin değil:
+   *   - `mediaKeys`: oynatıcı anahtarları bağladıysa dolu kalıyor, yani her
+   *     turda okunabilen kalıcı bir durum. Ama ancak setMediaKeys() bittikten
+   *     SONRA doluyor; ondan önceki turlarda boş görünür.
+   *   - `encrypted` olayı: şifreli içerik görüldüğü anda, anahtarlar daha
+   *     bağlanmadan ateşleniyor. Biz dinleyiciyi kurmadan önce geçtiyse onu
+   *     kaçırırız — o boşluğu da `mediaKeys` kapatıyor.
+   * Tek başına hiçbiri yetmiyor; birlikte hem erken hem geç hâli yakalıyorlar.
+   */
+  const isDrm = (v) => {
+    try {
+      if (v.mediaKeys) return true;
+    } catch {
+      // EME desteklemeyen/kısıtlı bağlamda özellik erişilemeyebilir.
+    }
+    return !!(W.__mdDrm && W.__mdDrm.has(v));
+  };
+
+  /**
+   * DRM'li videoyu ızgaraya KİLİTLİ bir kart olarak koyar.
+   *
+   * İndirilemeyecek bir şeyi listelemek ilk bakışta ters görünüyor, ama asıl
+   * soru "bu sayfadaki video neden listede yok?" ve sessiz kalmak kullanıcıyı
+   * kendi kurulumunu suçlamaya bırakıyor. Kart, sebebi söylediği için var.
+   *
+   * Eleman başına TEK kart: `<video>`nun öteki kaynakları ayrı kart olsaydı
+   * kullanıcı için orada tek bir video varken listede üç satır görünürdü — v1.26
+   * parçalı akışta öğrenilen ders. Onları `unsupported`'a da atmıyoruz, çünkü o
+   * sayı "yt-dlp bunları alabilir" demek.
+   */
+  const addDrm = (v, src) => {
+    // Kaynağı henüz bağlanmamış DRM videosu da olabiliyor; kartı yine de
+    // göstermek istediğimiz için elemana sabit bir kimlik üretiyoruz. Kimliğin
+    // tarama turları arasında DEĞİŞMEMESİ şart, yoksa kart her turda yeniden
+    // çizilir — `grp`teki ile aynı gerekçe.
+    const url = abs(src) || `drm:${location.href}#${drmCount}`;
+    if (seen.has(url)) return;
+    seen.add(url);
+    items.push({
+      url,
+      kind: 'video',
+      drm: true,
+      // Kapak varsa kartın küçük resmi o olur; yoksa popup ▶ döşemesini koyuyor.
+      poster: abs(v.poster) || '',
+      w: v.videoWidth || 0,
+      h: v.videoHeight || 0,
+      dur: Math.round(v.duration) || 0
+    });
   };
 
   // --- <img> ---------------------------------------------------------------
@@ -183,13 +247,20 @@ async function collectMedia(force) {
 
     const grp = srcs.find((u) => u && !u.startsWith('blob:')) || '';
 
-    add(srcs[0], 'video', {
-      w: v.videoWidth || 0,
-      h: v.videoHeight || 0,
-      dur: Math.round(v.duration) || 0,
-      grp
-    });
-    for (let i = 1; i < srcs.length; i++) add(srcs[i], 'video', { w: 0, h: 0, grp });
+    // Sayım ELEMAN üzerinden: kullanıcıya söylediğimiz şey "1 video DRM
+    // korumalı", kaç farklı blob adresi gördüğümüz değil.
+    if (isDrm(v)) {
+      drmCount++;
+      addDrm(v, srcs[0]);
+    } else {
+      add(srcs[0], 'video', {
+        w: v.videoWidth || 0,
+        h: v.videoHeight || 0,
+        dur: Math.round(v.duration) || 0,
+        grp
+      });
+      for (let i = 1; i < srcs.length; i++) add(srcs[i], 'video', { w: 0, h: 0, grp });
+    }
 
     if (v.poster) add(v.poster, 'image', { w: 0, h: 0, poster: true });
   }
@@ -206,6 +277,7 @@ async function collectMedia(force) {
   return {
     items,
     unsupported,
+    drm: drmCount,
     bgTruncated,
     frameUrl: location.href,
     host: location.hostname

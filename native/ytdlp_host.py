@@ -98,6 +98,21 @@ def read_message():
 
 # --- yardımcılar -----------------------------------------------------------
 
+def configure_macos_path():
+    """Finder-launched Chrome does not inherit the interactive shell PATH."""
+    if sys.platform != "darwin":
+        return
+    paths = os.environ.get("PATH", "").split(os.pathsep)
+    paths += ["/opt/homebrew/bin", "/usr/local/bin",
+              os.path.expanduser("~/.local/bin"),
+              os.path.expanduser("~/.deno/bin"),
+              os.path.expanduser("~/.bun/bin")]
+    os.environ["PATH"] = os.pathsep.join(dict.fromkeys(p for p in paths if p))
+
+
+configure_macos_path()
+
+
 def find_ytdlp():
     return shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
 
@@ -114,7 +129,9 @@ def find_ffmpeg():
     if p:
         return p
 
-    base = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Packages")
+    if sys.platform != "win32" or not os.environ.get("LOCALAPPDATA"):
+        return None
+    base = os.path.join(os.environ["LOCALAPPDATA"], "Microsoft", "WinGet", "Packages")
     if os.path.isdir(base):
         for root, _dirs, files in os.walk(base):
             if "ffmpeg.exe" in files:
@@ -196,12 +213,40 @@ def _ask_dir_powershell(initial):
     return out.stdout.strip()
 
 
+def _ask_dir_macos(initial):
+    """Run the native picker in a separate process; Cocoa/Tk needs a main thread.
+
+    Arguments are data, never interpolated into AppleScript source.
+    """
+    initial = os.path.abspath(os.path.expanduser(initial or "~"))
+    if not os.path.isdir(initial):
+        initial = os.path.expanduser("~")
+    script = '''on run argv
+    try
+        tell application "System Events"
+            activate
+            set chosen to choose folder with prompt (item 1 of argv) default location (POSIX file (item 2 of argv))
+        end tell
+        return POSIX path of chosen
+    on error number -128
+        return ""
+    end try
+end run'''
+    result = subprocess.run(
+        ["/usr/bin/osascript", "-e", script, ui("pick_title"), initial],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or "macOS folder picker failed")
+    return result.stdout.rstrip("\n")
+
+
 def pick_dir(msg):
     initial = msg.get("path") or ""
     path = ""
     err_key, err_vars = "", {}
     try:
-        path = _ask_dir_tk(initial)
+        path = _ask_dir_macos(initial) if sys.platform == "darwin" else _ask_dir_tk(initial)
     except Exception as e:
         if sys.platform == "win32":
             try:

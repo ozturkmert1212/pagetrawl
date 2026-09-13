@@ -4,6 +4,14 @@ Trawl the open page for images and videos, filter them, download in bulk.
 A personal-use Chrome extension (Manifest V3, plain JS — no build step), with a
 local yt-dlp bridge for streaming sites.
 
+**Popup view** — browse, filter, and select media from the current page.
+
+![PageTrawl popup showing a grid of images with filters and bulk download controls](docs/screenshots/popup.png)
+
+**Side panel** — keep PageTrawl open while browsing.
+
+![PageTrawl docked in the browser side panel beside Google Images](docs/screenshots/side-panel.png)
+
 ## Install
 
 1. Open `chrome://extensions`
@@ -198,6 +206,9 @@ the yt-dlp on your machine through Chrome's **Native Messaging** bridge.
 
 The bar appears on the known streaming sites, and **on any page where a segmented
 stream is detected** — an `.mpd`/`.m3u8` in the media list, or a `blob:` video.
+DRM-protected videos do *not* count as such a signal: yt-dlp can't get those
+either, so the bar stays out of the way instead of promising a download that
+would fail (see [Known limitations](#known-limitations)).
 Those pages used to show only the raw pieces with no way to act on them: a DASH
 stream lands in the grid as three entries that each look downloadable but aren't —
 the manifest (a playlist file), a video-only track and an audio-only track. They
@@ -216,6 +227,44 @@ whole queue rather than just the current item, and the page URL rides along as
 `--referer`, since bare CDN manifest URLs are often refused without one.
 
 ### Setup
+
+#### macOS (Apple Silicon and Intel)
+
+PageTrawl runs as a **Google Chrome extension**, not a standalone `.app` or
+Safari extension. Load this folder with **Load unpacked** at
+`chrome://extensions` with Developer mode enabled, then copy PageTrawl's ID.
+
+```bash
+# Install the native bridge dependencies (Homebrew required).
+brew install python yt-dlp ffmpeg deno
+cd /path/to/pagetrawl
+# Replace the example with the 32-character ID shown by Chrome.
+bash setup-native.sh YOUR_EXTENSION_ID
+```
+
+Reload PageTrawl at `chrome://extensions`. No administrator account is needed.
+The installer creates a launcher in `~/Library/Application Support/PageTrawl`
+and registers it in Chrome's per-user `NativeMessagingHosts` directory, following
+[Chrome's native messaging documentation](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging).
+The launcher uses the selected Python's absolute path. Keep the downloader
+folder in place; rerun setup after moving it or replacing Python.
+
+Finder-launched Chrome can find tools in both `/opt/homebrew/bin` (Apple Silicon)
+and `/usr/local/bin` (Intel), plus `~/.local/bin`, `~/.deno/bin`, and `~/.bun/bin`.
+The folder picker uses macOS's native dialog without requiring Tkinter.
+If macOS asks for folder access or System Events automation permission, allow
+access for the folder you want to use. Cancelling the picker leaves it unchanged.
+
+To unregister the bridge: `bash setup-native.sh --uninstall`.
+This preserves downloads and extension settings. Basic browser downloads work
+without the bridge; yt-dlp downloads and moving files outside Chrome's download
+folder require it. This installer targets Google Chrome, not other browsers.
+
+Validation: `python3 -m unittest discover -s native -p 'test_*.py' -v`.
+For a manual check, open PageTrawl on a media page, check the yt-dlp status,
+choose a folder, download a file there, then test cancelling a download.
+
+#### Windows
 
 ```powershell
 # 1. Load the extension, copy its ID from chrome://extensions
@@ -405,7 +454,14 @@ the popup was closed and reopened.
   the page's memory; it isn't reachable from the extension's context. The popup
   counts such videos and shows a warning.
 - **DRM-protected content (Widevine)** arrives encrypted and is technically
-  unsolvable.
+  unsolvable. Since v1.28 such videos are at least *detected* — via the media
+  element's `mediaKeys` and the `encrypted` event — and shown in the grid as
+  **locked cards**: greyed out, marked with a lock and a `DRM` tag, with no
+  checkbox. They cannot be selected, so "Select all" skips them and they can
+  never reach the download queue. They also get their own notice line, separate
+  from ordinary `blob:` videos, and they no longer open the yt-dlp bar. Listing
+  something undownloadable is deliberate: the question a user actually has is
+  "why can't I get this video?", and silence leaves them blaming their own setup.
 - **Thumbnails may not render.** Sites with hotlink protection reject requests
   coming from the extension context, so you see a file-extension label instead of
   a preview. The file itself can still download, because that goes through
