@@ -1,5 +1,30 @@
-# Claude Code yerel ayarları (makineye özel yollar içerir)
-.claude/settings.local.json
+# Yerel ajan ayarları (izinler ve makineye özel yollar içerebilir)
+.claude/
+.codex/
+
+# Ortam sırları; yalnız örnek şablonlar depoya girebilir.
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Oturum dışa aktarımları, kimlik bilgileri ve özel anahtarlar
+cookies.txt
+credentials.json
+*.har
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# Yerel bağımlılıklar ve test çıktıları
+.venv/
+node_modules/
+test-results/
+playwright-report/
+.DS_Store
 
 # Kuruluma özel — ikisini de setup-native.ps1 üretiyor.
 # Eklenti kimliği ve Python yolu her makinede farklı, commit'lenmemeli.

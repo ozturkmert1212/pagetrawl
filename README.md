@@ -2,7 +2,7 @@
 
 Trawl the open page for images and videos, filter them, download in bulk.
 A personal-use Chrome extension (Manifest V3, plain JS — no build step), with a
-local yt-dlp bridge for streaming sites.
+bundled browser video engine and an optional local yt-dlp bridge.
 
 **Popup view** — browse, filter, and select media from the current page.
 
@@ -22,11 +22,11 @@ local yt-dlp bridge for streaming sites.
 After changing code, hit the reload (⟳) button on `chrome://extensions`. For
 `popup.js`/`popup.css` changes you also need to close and reopen the popup.
 
-> **If you cloned the repo, this is not enough.** The steps above give you page
-> scanning, the grid and bulk downloading — but streaming sites (YouTube,
-> Instagram…) and saving outside the Downloads folder need the **yt-dlp bridge,
-> installed separately**: its files are machine-specific and therefore not in the
-> repo. See the "yt-dlp bridge" section below.
+> **No extra installation for supported video streams.** Select **Browser — no
+> installation** (the default), play the video so its stream is detected, then
+> select the stream card and download. HLS/DASH support and limits are below.
+> The optional yt-dlp method still needs the native bridge; so does automatic
+> saving outside the browser's download directory using a custom absolute path.
 
 ## Usage
 
@@ -139,8 +139,13 @@ become `_`, and each field is capped at 100 characters.
 live outside the Downloads folder** (Desktop, `D:\`, wherever). You can also type
 or paste a path into the box and press Enter; **Reset** returns to the default.
 
-With the box empty, the default is: images to `Downloads\{site-name}\`, videos to
-`Downloads\yt-dlp\`.
+With the box empty, direct files follow the filename template under Downloads;
+optional yt-dlp downloads go to `Downloads/yt-dlp`.
+
+**Browser HLS/DASH downloads always use `Downloads/PageTrawl`.** They do not use
+the custom absolute folder or filename template and never require the bridge.
+Enable “Ask where to save each file” to choose the final destination in Chrome's
+save dialog after merging. This setting is respected by the browser engine.
 
 #### Why this is so convoluted
 
@@ -153,7 +158,8 @@ rule. To keep this a single setting, the bridge is used for both:
 |---|---|
 | The folder picker window | Bridge (`pickdir` → tkinter, falling back to PowerShell `FolderBrowserDialog`) |
 | Validating a typed path | Bridge (`checkdir`) |
-| Writing the video | Bridge (`-P outdir`) |
+| Writing a yt-dlp video | Bridge (`-P outdir`) |
+| Merging/saving a browser stream | Bundled wasm worker + `chrome.downloads`, under `Downloads/PageTrawl` |
 | Downloading the image | Chrome (`chrome.downloads`) |
 | Moving the image outside Downloads | Bridge (`move`) |
 
@@ -197,34 +203,59 @@ The probe uses `saveAs: false`. Without stating that explicitly, Chrome's own
 dialog **named `download.txt`** (with a `data:` URL Chrome also swallows our
 filename suggestion).
 
-## yt-dlp bridge (YouTube, Instagram, TikTok, X… and any segmented stream)
+## Browser video downloads — no extra installation (v1.29)
 
-Streaming sites don't serve video as a single file: they use segmented DASH/HLS
-streams plus signed URLs. Solving that inside the extension would mean rewriting
-yt-dlp, and it would break every time a site changed. Instead the extension calls
-the yt-dlp on your machine through Chrome's **Native Messaging** bridge.
+The video bar defaults to **Browser — no installation**. Play the video, scan
+its page, select an `HLS`/`DASH` stream card (shown as `stream`) and click
+**Download selected**. The top Download button uses selected stream cards, or
+the only detected stream; with multiple streams it asks you to choose rather
+than guessing which one is the video and which one is an advert.
 
-The bar appears on the known streaming sites, and **on any page where a segmented
-stream is detected** — an `.mpd`/`.m3u8` in the media list, or a `blob:` video.
-DRM-protected videos do *not* count as such a signal: yt-dlp can't get those
-either, so the bar stays out of the way instead of promising a download that
-would fail (see [Known limitations](#known-limitations)).
-Those pages used to show only the raw pieces with no way to act on them: a DASH
-stream lands in the grid as three entries that each look downloadable but aren't —
-the manifest (a playlist file), a video-only track and an audio-only track. They
-are deliberately *not* merged into one card, because they are not qualities of one
-video: picking one would hand you a silent video or a picture-less audio file. The
-notice line says so, and the bar above downloads the whole thing properly merged.
+Segments are fetched with browser credentials and merged locally by the bundled
+single-thread ffmpeg WebAssembly engine. No Python, Homebrew, native ffmpeg,
+yt-dlp, server upload, or runtime CDN script is required. The extension package
+includes approximately 32 MB of wasm. Video is remuxed to MP4 without re-encoding;
+**Audio only** creates MP3. Best/1080p/720p selects an available representation,
+not an upscale or transcode.
 
-**Selecting a manifest in the grid sends it to yt-dlp instead of the download
-queue.** Manifest cards carry a `stream` tag rather than `network`, and picking
-one and pressing `Download selected` queues it for the bridge — downloading it as
-a plain file would have produced a few kilobytes of XML. That is how you get every
-video off a page that hosts several: tick all the `.mpd`/`.m3u8` cards at once.
-The bridge runs one download at a time, so the extra ones queue up and start as
-each finishes; the status line shows how many are still waiting. Cancel clears the
-whole queue rather than just the current item, and the page URL rides along as
-`--referer`, since bare CDN manifest URLs are often refused without one.
+Supported:
+
+- Finished, unencrypted HLS media/master playlists, MPEG-TS and fragmented MP4,
+  default external audio groups, initialization maps and byte ranges.
+- Static, single-period DASH: inherited SegmentTemplate (Number/Time,
+  SegmentTimeline), SegmentList and complete BaseURL media files; selected video
+  and audio tracks are merged into one file.
+- URLs detected by `.m3u8`/`.mpd` or playlist response MIME types.
+- Sequential queue, progress, cancel (clears pending jobs too), download history,
+  and continued downloads after the popup closes.
+
+Limits are explicit: **256 MiB total downloaded input per job**, **10,000 segments
+per track**, **100 queued jobs**. There is no live recording, encrypted HLS
+(including AES-128), DRM removal, discontinuity repair, changing initialization
+maps, multi-period DASH, subtitles or site-specific signature extraction.
+Memory use exceeds input size during merging; the cap is deliberately conservative.
+Unsupported codecs/streams fail visibly, never as a successful playlist download.
+Site access controls can still reject requests: browser cookies are included but
+custom Referer/Authorization headers are not copied. A `blob:` alone is not a
+manifest; play the video so its actual network stream can be found.
+
+Files go to **Downloads/PageTrawl**, or Chrome's save dialog if enabled. The Blob
+is retained until Chrome confirms the save; only then does the job become done
+and the queue advance. Restarting the browser/extension interrupts in-memory
+work; it is not a resumable download system.
+
+## Optional yt-dlp bridge
+
+Select **yt-dlp — optional** in the video bar for site-specific extraction,
+large videos, or stream layouts the browser engine doesn't support. Selecting
+this method is explicit; a failed browser download never silently launches a
+native program. Direct MP4/WebM grid downloads continue to use Chrome's normal
+download API.
+
+The bridge downloads a page URL or selected manifests, one job at a time, and
+can write to a custom absolute folder. When a manifest is sent to yt-dlp, its
+page URL is passed as `--referer`. The following setup and dependency instructions
+apply only to this optional native method.
 
 ### Setup
 
@@ -354,6 +385,9 @@ the popup was closed and reopened.
 | `popup.html/css/js` | Grid UI, filters, selection |
 | `i18n.js` | Turkish/English strings + the `t()` helper; shared by the popup and the service worker |
 | `icons/` | Extension icons (16/32/48/128) + `make-icon.py` that generates them (Pillow) |
+| `stream/plan.js` | HLS/DASH manifest planning |
+| `stream/offscreen.js`, `stream/mux-worker.js` | Browser fetch, local wasm mux and Blob ownership |
+| `stream/background.js` | Persistent browser queue, download/history coordination |
 | `native/ytdlp_host.py` | Native messaging host: calls yt-dlp, opens the folder window, moves files |
 | `setup-native.ps1` | Bridge setup (bat + host manifest + registry) |
 
@@ -449,8 +483,8 @@ the popup was closed and reopened.
 
 ## Known limitations
 
-- **`blob:` videos can't be downloaded from the grid** — use the yt-dlp bar above
-  for those. The `blob:` URL you see in a `<video>` tag is a reference living in
+- **`blob:` URLs cannot be downloaded directly** — use a detected HLS/DASH
+  stream card, or the optional yt-dlp method for site-specific extraction. The `blob:` URL you see in a `<video>` tag is a reference living in
   the page's memory; it isn't reachable from the extension's context. The popup
   counts such videos and shows a warning.
 - **DRM-protected content (Widevine)** arrives encrypted and is technically
@@ -513,6 +547,21 @@ copyright status are your responsibility. DRM-protected content (Widevine) is ou
 of scope — it arrives encrypted, is technically unsolvable, and the tool has no
 such capability.
 
+## Verification
+
+```bash
+node --test tests/stream-plan.test.cjs
+python3 -m unittest discover -s native -p 'test_*.py' -v
+# Developer-only: requires Playwright with Chromium and native ffmpeg/ffprobe
+# to generate synthetic test videos. None are runtime requirements.
+node tests/browser-stream.cjs
+```
+
+The browser integration test generates its own short videos, uses a disposable
+Chromium profile and a local HTTP server, then verifies saved audio/video tracks
+and duration with ffprobe. It tests queueing, cancel, errors and popup closure.
+
 ## License
 
-MIT — see [LICENSE](LICENSE).
+PageTrawl source: MIT — see [LICENSE](LICENSE). The bundled ffmpeg core is
+GPL-2.0-or-later; see [its notices and source links](vendor/ffmpeg/README.md).
