@@ -537,7 +537,8 @@ chrome.webRequest.onResponseStarted.addListener(
     const ct = get('content-type').toLowerCase();
     const size = parseInt(get('content-length'), 10) || 0;
 
-    const isVideo = ct.startsWith('video/') || VIDEO_EXT.test(d.url);
+    const manifest = /(?:application\/(?:vnd\.apple\.mpegurl|x-mpegurl|dash\+xml)|audio\/mpegurl)/i.test(ct);
+    const isVideo = manifest || ct.startsWith('video/') || VIDEO_EXT.test(d.url);
     const isImage = ct.startsWith('image/');
     if (!isVideo && !isImage) return;
 
@@ -545,7 +546,7 @@ chrome.webRequest.onResponseStarted.addListener(
     if (isImage && size && size < 20000) return;
 
     const list = netBuffer.get(d.tabId) || [];
-    list.push({ url: d.url, kind: isVideo ? 'video' : 'image', size, net: true });
+    list.push({ url: d.url, kind: isVideo ? 'video' : 'image', size, net: true, manifest });
     netBuffer.set(d.tabId, list);
     scheduleFlush();
   },
@@ -885,6 +886,8 @@ function ytStart(job, left = 0) {
   langReady.then(() =>
     pushStatus({
       running: true,
+      engine: 'native',
+      phase: '',
       percent: 0,
       line: t('yt.starting'),
       dir: '',
@@ -1042,6 +1045,7 @@ function nativeConnect() {
       noteFolder('wk.movesLost', { n: lostMoves, stage: STAGE_DIR }, true, err);
     }
 
+    if (streamState.active) return;
     if (err && !wasRunning) {
       pushStatus({
         running: false,
@@ -1387,18 +1391,13 @@ async function sweepAlive() {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'ytdlp') {
-    if (msg.action === 'download') {
-      ytStart({ url: msg.url, mode: msg.mode, referer: msg.referer || '' });
-      sendResponse({ ok: true });
-      return true;
-    }
-
-    // Izgaradan seçilen manifestler: köprü aynı anda tek indirme yapıyor,
-    // o yüzden sıraya diziliyorlar.
-    if (msg.action === 'queue') {
-      ytEnqueue(msg.urls || [], msg.mode, msg.referer || '').then((n) =>
-        sendResponse({ ok: true, count: n })
-      );
+    if (['download', 'queue'].includes(msg.action)) {
+      streamReady.then(() => streamSerial(async () => {
+        if (streamState.active || streamState.queue.length) return { ok: false, error: t('stream.browserBusy') };
+        const urls = msg.action === 'queue' ? (msg.urls || []) : [msg.url];
+        const count = await ytEnqueue(urls, msg.mode, msg.referer || '');
+        return { ok: true, count };
+      })).then(sendResponse, e => sendResponse({ ok: false, error: e.message }));
       return true;
     }
 
@@ -1532,3 +1531,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 });
+
+// Browser-only HLS/DASH engine; owns a separate serialized queue.
+importScripts('stream/background.js');

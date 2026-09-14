@@ -258,6 +258,7 @@ let drmSeen = 0;
 // kaliteleri" diye tek kartta toplamak yanlış olurdu — kullanıcı birini seçip
 // sessiz bir video ya da görüntüsüz bir ses indirirdi.
 const MANIFEST_EXT = /\.(m3u8|mpd)(\?|#|$)/i;
+const isManifest = m => !!m.manifest || MANIFEST_EXT.test(m.url);
 let manifestSeen = false;
 let capped = false;
 let bgTruncated = false;   // CSS arka plan taraması süre bütçesine takıldı
@@ -288,6 +289,7 @@ function absorb(items) {
 
     const prev = byUrl.get(it.url);
     if (prev) {
+      if (isManifest(it)) { prev.manifest = true; manifestSeen = true; }
       // Aynı URL birden çok yerden geldiyse en zengin bilgiyi tut.
       enrich(prev, it);
       continue;
@@ -306,7 +308,7 @@ function absorb(items) {
       capped = true;
       continue;
     }
-    if (MANIFEST_EXT.test(it.url)) manifestSeen = true;
+    if (isManifest(it)) manifestSeen = true;
     byUrl.set(it.url, it);
     byKey.set(key, it);
     fresh.push(it);
@@ -667,7 +669,7 @@ function buildCard(m) {
   tag.className = 'tag';
   // Manifest kartını ayırt etmek şart: bu kart tıklandığında chrome.downloads
   // değil yt-dlp çalışıyor, ve tek gerçekten işe yarayan seçenek o.
-  if (MANIFEST_EXT.test(m.url)) {
+  if (isManifest(m)) {
     tag.textContent = t('tag.manifest');
     tag.classList.add('stream');
     tag.title = t('tag.manifestTitle');
@@ -1600,20 +1602,26 @@ $('#download').addEventListener('click', async () => {
   // Manifestler (.mpd/.m3u8) chrome.downloads'a gitmemeli: inen şey birkaç
   // kilobaytlık bir XML/metin listesi olurdu, video değil. Onları yt-dlp'ye
   // yolluyoruz — parçaları o indirip birleştiriyor.
-  const manifests = picked.filter((m) => MANIFEST_EXT.test(m.url));
+  const manifests = picked.filter((m) => isManifest(m));
   const items = picked
-    .filter((m) => !MANIFEST_EXT.test(m.url))
+    .filter((m) => !isManifest(m))
     .map((m) => ({ url: m.url, kind: m.kind }));
 
   if (manifests.length) {
     const res = await chrome.runtime.sendMessage({
-      type: 'ytdlp',
+      type: $('#ytEngine').value === 'native' ? 'ytdlp' : 'browserStream',
       action: 'queue',
+      title: tab.title || '',
+      pageUrl: tab.url || '',
       urls: manifests.map((m) => m.url),
       mode: $('#ytMode').value,
       // Çıplak CDN adresleri çoğu zaman referer'sız reddediliyor.
       referer: tab.url || ''
     });
+    if (!res?.ok) {
+      renderYtStatus({ running: false, error: res?.error || t('stream.error.network') });
+      return;
+    }
     manifests.forEach((m) => done.add(m.url));
     if (!items.length) {
       selected.clear();
@@ -1706,6 +1714,7 @@ function renderYtStatus(s) {
   let text;
   if (stale) text = t('yt.stale');
   else if (s.error) text = s.error;
+  else if (running && s.engine === 'browser' && s.phase !== 'fetching') text = t('stream.phase.' + (s.phase || 'loading'));
   else if (running) text = s.percent ? t('yt.downloadingPct', { pct: Math.round(s.percent) }) : t('yt.downloading');
   else if (s.percent === 100) text = t('yt.downloaded');
   else text = s.line || '';   // iptal gibi tek seferlik bilgiler
@@ -1715,6 +1724,7 @@ function renderYtStatus(s) {
   if (running && s.left > 0) text += ' · ' + t('yt.left', { n: s.left });
 
   ytBusy = running;
+  if (running && s.engine) $('#ytEngine').value = s.engine === 'browser' ? 'browser' : 'native';
   $('#ytBarFill').style.width = (s.percent || 0) + '%';
   $('#ytLine').textContent = text;
   $('#ytLine').title = s.dir || s.line || '';   // ayrıntı isteyen üstüne gelsin
@@ -1722,6 +1732,8 @@ function renderYtStatus(s) {
   $('#ytStatus').classList.toggle('hidden', !text && !running);
   $('#ytCancel').classList.toggle('hidden', !running);
   $('#ytGo').disabled = running;
+  $('#ytEngine').disabled = running;
+  $('#ytMode').disabled = running;
 }
 
 /** Sayfadan çalıştırılır: video başlığı/kapağı için sayfanın kendi meta'ları. */
@@ -1896,11 +1908,12 @@ async function initYt() {
   $('#ytTitle').textContent = trimTitle(tab.title, site) || t('yt.videoOf', { site });
   $('#ytSub').textContent = site;
 
-  renderYtStatus(await chrome.runtime.sendMessage({ type: 'getYtStatus' }));
+  const status = await chrome.runtime.sendMessage({ type: 'getYtStatus' });
+  renderYtStatus(status?.running || status?.error || status?.percent === 100 ? status : { running: false, line: t('stream.ready') });
 
   // Köprü ayakta mı, ffmpeg var mı — arka planda sor. Sonucu yalnızca bir
   // eksik varsa gösteriyoruz; her şey yolundaysa kullanıcıyı ilgilendirmiyor.
-  if (!probed) {
+  if ($('#ytEngine').value === 'native' && !probed) {
     probed = true;
     chrome.runtime.sendMessage({ type: 'ytdlp', action: 'probe' });
   }
@@ -1990,7 +2003,7 @@ function setThumb(list) {
 
 /** Köprü eksiklerini bildirir. Sadece indirmeyi engelleyecek/kısıtlayacak olanları. */
 function renderProbe(p) {
-  if (!p || ytBusy) return;   // sürmekte olan indirmenin satırını ezmesin
+  if (!p || ytBusy || $('#ytEngine').value !== 'native') return;   // sürmekte olan indirmenin satırını ezmesin
   let warn = '';
   if (!p.ytdlp) warn = t('probe.noYtdlp');
   else if (!p.js) warn = t('probe.noJs');
@@ -2006,18 +2019,35 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'ytProbe') renderProbe(msg.probe);
 });
 
-$('#ytGo').addEventListener('click', () => {
-  renderYtStatus({ running: true, percent: 0, line: t('yt.starting') });
-  chrome.runtime.sendMessage({
-    type: 'ytdlp',
-    action: 'download',
-    url: tab.url,
-    mode: $('#ytMode').value
-  });
+$('#ytEngine').addEventListener('change', () => {
+  if ($('#ytEngine').value === 'native') {
+    probed = true;
+    chrome.runtime.sendMessage({ type: 'ytdlp', action: 'probe' });
+  } else if (!ytBusy) {
+    renderYtStatus({ running: false, line: t('stream.ready'), error: null });
+  }
+});
+
+$('#ytGo').addEventListener('click', async () => {
+  if ($('#ytEngine').value === 'native') {
+    const res = await chrome.runtime.sendMessage({ type: 'ytdlp', action: 'download', url: tab.url, mode: $('#ytMode').value });
+    if (!res?.ok) renderYtStatus({ running: false, error: res?.error || t('stream.error.network') });
+    return;
+  }
+  const manifests = all.filter(m => isManifest(m) && !m.unsupported && !m.drm);
+  const picked = manifests.filter(m => selected.has(m.url));
+  const urls = (picked.length ? picked : manifests.length === 1 ? manifests : []).map(m => m.url);
+  if (!urls.length) {
+    renderYtStatus({ running: false, line: '', error: t(manifests.length > 1 ? 'stream.choose' : 'stream.notFound') });
+    return;
+  }
+  const res = await chrome.runtime.sendMessage({ type: 'browserStream', action: 'queue', urls,
+    mode: $('#ytMode').value, title: tab.title || '', pageUrl: tab.url || '' });
+  if (!res?.ok) renderYtStatus({ running: false, error: res?.error || t('stream.error.network') });
 });
 
 $('#ytCancel').addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'ytdlp', action: 'cancel' });
+  chrome.runtime.sendMessage({ type: lastYtStatus?.engine === 'browser' ? 'browserStream' : 'ytdlp', action: 'cancel' });
 });
 
 // --- dil -------------------------------------------------------------------

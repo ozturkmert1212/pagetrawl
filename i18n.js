@@ -56,6 +56,29 @@ const I18N = {
     'stats': '{seen} gösteriliyor · {imgs} resim, {vids} video',
     'selCount': '{n} seçili',
 
+    "stream.engine": "İndirme yöntemi",
+    "stream.browser": "Tarayıcı — kurulum yok",
+    "stream.native": "yt-dlp — isteğe bağlı",
+    "stream.ready": "Hazır. Videolar İndirilenler/PageTrawl klasörüne kaydedilir.",
+    "stream.choose": "Birden çok yayın bulundu. İndirmek istediğin akış kartlarını seç.",
+    "stream.notFound": "Yayın adresi henüz bulunamadı. Videoyu oynatıp yeniden tara; doğrudan videoları ızgaradan indirebilir veya isteğe bağlı yt-dlp yöntemini seçebilirsin.",
+    "stream.nativeBusy": "Önce çalışan yt-dlp indirmesinin bitmesini bekle.",
+    "stream.browserBusy": "Önce çalışan tarayıcı indirmesinin bitmesini bekle.",
+    "stream.phase.loading": "İndirme hazırlanıyor…",
+    "stream.phase.merging": "Ses ve görüntü birleştiriliyor…",
+    "stream.phase.saving": "İndirilenler/PageTrawl klasörüne kaydediliyor…",
+    "stream.error.unsupported": "Bu yayın biçimi tarayıcı motorunda henüz desteklenmiyor. İsteğe bağlı yt-dlp yöntemini deneyebilirsin.",
+    "stream.error.encrypted": "Şifreli veya DRM korumalı yayın tarayıcı motorunda desteklenmiyor. DRM koruması kaldırılmaz.",
+    "stream.error.live": "Canlı veya henüz tamamlanmamış yayın desteklenmiyor.",
+    "stream.error.limit": "Tarayıcı sınırı aşıldı: iş başına 256 MiB, parça listesi başına 10.000 parça, kuyrukta 100 iş. Büyük videolar için yt-dlp kullanılabilir.",
+    "stream.error.range": "Sunucu istenen dosya aralığını doğru göndermedi; indirme durduruldu.",
+    "stream.error.empty": "Sunucu boş bir dosya döndürdü; indirme durduruldu.",
+    "stream.error.engine": "Yerleşik video motoru açılamadı. Eklentiyi yenileyip tekrar dene.",
+    "stream.error.mux": "Ses ve görüntü birleştirilemedi. Bu kodek veya yayın düzeni desteklenmiyor olabilir.",
+    "stream.error.save": "Dosya kaydedilemedi veya kayıt penceresi iptal edildi.",
+    "stream.error.interrupted": "İndirme kesildi. Yeniden başlatman gerekiyor.",
+    "stream.error.http": "Sunucu indirme isteğini reddetti. Videoyu yeniden oynatıp tara; giriş veya siteye özel başlıklar gerekebilir.",
+    "stream.error.network": "Yayın indirilemedi. Bağlantıyı kontrol edip videoyu yeniden oynat ve tara.",
     'yt.videoOf': '{site} videosu',
     'yt.mode.best': 'En iyi kalite',
     'yt.mode.1080': "1080p'ye kadar",
@@ -79,7 +102,7 @@ const I18N = {
     'settings.save': 'Kaydet',
     'folder.ph': 'Yol okunuyor…',
     'folder.rootPh': 'İndirilenler klasörü',
-    'folder.note.unset': 'Fotoğraflar İndirilenler köküne, videolar İndirilenler\\yt-dlp altına iner.',
+    'folder.note.unset': 'Fotoğraflar İndirilenler köküne, tarayıcı videoları İndirilenler/PageTrawl, yt-dlp videoları İndirilenler/yt-dlp altına iner.',
     'folder.note.inside': 'Fotoğraflar ve videolar buraya iner.',
     'folder.note.outside':
       'Fotoğraflar ve videolar buraya iner. Burası İndirilenler dışında olduğu için ' +
@@ -135,11 +158,11 @@ const I18N = {
     'notice.dash':
       'Bu sayfadaki video parçalı akış (DASH/HLS). Listedeki .mpd/.m3u8 bir liste dosyası, ' +
       'yanındaki mp4\'ler de ayrı görüntü ve ses parçaları — biri tek başına indirilirse ' +
-      'sessiz video ya da görüntüsüz ses olur. Tamamı için üstteki yt-dlp barını kullan.',
+      'sessiz video ya da görüntüsüz ses olur. Tamamı için üstteki video indirme barını kullan.',
     'notice.drm':
       '{n} video DRM korumalı (Widevine) — şifreli geldiği için ne eklenti ne de ' +
       'yt-dlp indirebilir. Izgarada kilitli kart olarak duruyorlar.',
-    'notice.blob': '{n} adet blob: video atlandı — bunlar parçalı akış (HLS/DASH) ve eklentiden indirilemez.',
+    'notice.blob': '{n} adet blob: adresi doğrudan indirilemez. Videoyu oynatıp akış kartını seç.',
     'notice.capped': "Liste {max} öğede doldu; yeni gelenler eklenmiyor. Seçtiklerini indirip popup'ı yeniden aç.",
     'notice.bgTruncated': 'Sayfa çok büyük olduğu için CSS arka plan görsellerinin bir kısmı taranamadı.',
 
@@ -150,7 +173,7 @@ const I18N = {
       'Bu video DRM korumalı (Widevine): şifreli geldiği için ne eklenti ne de yt-dlp indirebilir.',
     'tag.manifest': 'akış',
     'tag.manifestTitle':
-      'Parçalı akışın liste dosyası. Bunu seçip indirirsen yt-dlp çalışır ve ' +
+      'Parçalı akışın liste dosyası. Seçilen indirme yöntemiyle ' +
       'görüntüyle sesi birleştirip tek dosya verir — bu sayfadaki videoyu almanın doğru yolu.',
     'tag.image': 'resim',
     'tag.video': 'video',
@@ -162,7 +185,7 @@ const I18N = {
     'footer.download': 'Seçilenleri indir',
     'btn.queueing': 'Kuyruğa alınıyor…',
     'btn.queued': '{n} dosya kuyrukta',
-    'btn.queuedYt': '{n} akış yt-dlp kuyruğunda',
+    'btn.queuedYt': '{n} akış indirme kuyruğunda',
     'yt.left': 'sırada {n} tane daha',
     'btn.error': 'Hata: {msg}',
     'err.unknown': 'bilinmiyor',
@@ -237,6 +260,29 @@ const I18N = {
     'stats': '{seen} shown · {imgs} images, {vids} videos',
     'selCount': '{n} selected',
 
+    "stream.engine": "Download method",
+    "stream.browser": "Browser — no installation",
+    "stream.native": "yt-dlp — optional",
+    "stream.ready": "Ready. Videos are saved to Downloads/PageTrawl.",
+    "stream.choose": "Multiple streams found. Select the stream cards you want to download.",
+    "stream.notFound": "No stream URL detected yet. Play the video and scan again; download direct videos from the grid, or select optional yt-dlp.",
+    "stream.nativeBusy": "Wait for the current yt-dlp download to finish.",
+    "stream.browserBusy": "Wait for the current browser download to finish.",
+    "stream.phase.loading": "Preparing download…",
+    "stream.phase.merging": "Merging audio and video…",
+    "stream.phase.saving": "Saving to Downloads/PageTrawl…",
+    "stream.error.unsupported": "This stream format is not yet supported by the browser engine. You can try optional yt-dlp.",
+    "stream.error.encrypted": "Encrypted or DRM-protected streams are not supported by the browser engine. DRM is not removed.",
+    "stream.error.live": "Live or unfinished streams are not supported.",
+    "stream.error.limit": "Browser limit exceeded: 256 MiB per job, 10,000 segments per track, 100 queued jobs. Use optional yt-dlp for larger videos.",
+    "stream.error.range": "The server returned an incorrect byte range; the download was stopped.",
+    "stream.error.empty": "The server returned an empty file; the download was stopped.",
+    "stream.error.engine": "The bundled video engine could not start. Reload the extension and try again.",
+    "stream.error.mux": "Audio/video merging failed. The codec or stream layout may not be supported.",
+    "stream.error.save": "The file could not be saved, or the save dialog was canceled.",
+    "stream.error.interrupted": "The download was interrupted. Please start it again.",
+    "stream.error.http": "The server rejected the download. Play the video and scan again; sign-in or site-specific headers may be required.",
+    "stream.error.network": "Could not download the stream. Check your connection, play the video and scan again.",
     'yt.videoOf': '{site} video',
     'yt.mode.best': 'Best quality',
     'yt.mode.1080': 'Up to 1080p',
@@ -260,7 +306,7 @@ const I18N = {
     'settings.save': 'Save',
     'folder.ph': 'Reading path…',
     'folder.rootPh': 'Downloads folder',
-    'folder.note.unset': 'Images go to the Downloads root, videos to Downloads\\yt-dlp.',
+    'folder.note.unset': 'Images go to the Downloads root, browser videos to Downloads/PageTrawl, yt-dlp videos to Downloads/yt-dlp.',
     'folder.note.inside': 'Images and videos land here.',
     'folder.note.outside':
       'Images and videos land here. Since this is outside Downloads, images are moved ' +
@@ -315,12 +361,12 @@ const I18N = {
     'notice.dash':
       'The video on this page is a segmented stream (DASH/HLS). The .mpd/.m3u8 in the list is ' +
       'a playlist file and the mp4s next to it are separate video and audio tracks — downloading ' +
-      'one on its own gives you a silent video or audio with no picture. Use the yt-dlp bar above ' +
+      'one on its own gives you a silent video or audio with no picture. Use the video download bar above ' +
       'to get the whole thing.',
     'notice.drm':
       '{n} video(s) are DRM-protected (Widevine) — they arrive encrypted, so neither the ' +
       'extension nor yt-dlp can download them. They appear in the grid as locked cards.',
-    'notice.blob': "Skipped {n} blob: video(s) — these are segmented streams (HLS/DASH) and can't be downloaded from the extension.",
+    'notice.blob': "Skipped {n} blob: URL(s). Play the video and select its detected stream card.",
     'notice.capped': 'The list filled up at {max} items; new ones are no longer added. Download your selection and reopen the popup.',
     'notice.bgTruncated': 'The page is very large, so some CSS background images could not be scanned.',
 
@@ -332,7 +378,7 @@ const I18N = {
       'extension nor yt-dlp can download it.',
     'tag.manifest': 'stream',
     'tag.manifestTitle':
-      'The playlist file of a segmented stream. Selecting and downloading this runs yt-dlp, ' +
+      'The playlist file of a segmented stream. The selected download method ' +
       'which merges the video and audio into one file — the right way to get the video on this page.',
     'tag.image': 'image',
     'tag.video': 'video',
@@ -344,7 +390,7 @@ const I18N = {
     'footer.download': 'Download selected',
     'btn.queueing': 'Queueing…',
     'btn.queued': '{n} files queued',
-    'btn.queuedYt': '{n} stream(s) queued for yt-dlp',
+    'btn.queuedYt': '{n} stream(s) queued for download',
     'yt.left': '{n} more queued',
     'btn.error': 'Error: {msg}',
     'err.unknown': 'unknown',
