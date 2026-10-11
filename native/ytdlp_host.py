@@ -41,6 +41,7 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import urlparse
 
 if sys.platform == "win32":
     # stdin/stdout'ta CRLF çevirisi olursa protokol bozulur.
@@ -199,16 +200,22 @@ def _ask_dir_tk(initial):
 
 def _ask_dir_powershell(initial):
     """tkinter yoksa Windows'ta yedek: FolderBrowserDialog (STA şart)."""
+    # Değerler betiğe GÖMÜLMÜYOR: içinde tek tırnak olan bir yol betiği bozar
+    # ya da komut enjekte ederdi. Ortam değişkeniyle veri olarak geçiyoruz.
     script = (
         "Add-Type -AssemblyName System.Windows.Forms;"
         "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
-        f"$d.Description = '{ui('pick_title')}';"
-        f"$d.SelectedPath = '{(initial or os.path.expanduser('~'))}';"
+        "$d.Description = $env:PT_TITLE;"
+        "$d.SelectedPath = $env:PT_INITIAL;"
         "if ($d.ShowDialog() -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }"
     )
+    env = os.environ.copy()
+    env["PT_TITLE"] = ui("pick_title")
+    env["PT_INITIAL"] = initial or os.path.expanduser("~")
     out = subprocess.run(
         ["powershell", "-NoProfile", "-STA", "-Command", script],
-        capture_output=True, text=True, creationflags=CREATE_NO_WINDOW, timeout=300
+        capture_output=True, text=True, creationflags=CREATE_NO_WINDOW, timeout=300,
+        env=env
     )
     return out.stdout.strip()
 
@@ -326,6 +333,19 @@ def move_file(msg):
     if not src or not dst:
         send({"type": "moved", "ok": False, "error": "Eksik yol."})
         return
+    # Silmedeki frenlerin aynısı: iki uç da mutlak ve izin verilen köklerin
+    # (kayıt klasörü / İndirilenler) altında olmak zorunda. Yoksa host, eklenti
+    # adına diskteki herhangi bir dosyayı herhangi bir yere taşıyabilirdi.
+    roots = [r for r in (msg.get("roots") or []) if r]
+    if not (os.path.isabs(src) and os.path.isabs(dst)
+            and roots and _under(src, roots) and _under(dst, roots)):
+        send({"type": "moved", "ok": False,
+              "error": f"{os.path.basename(src)}: izin verilen klasörlerin dışında."})
+        return
+    if os.path.islink(src) or not os.path.isfile(src):
+        send({"type": "moved", "ok": False,
+              "error": f"{os.path.basename(src)}: düz dosya değil."})
+        return
     # Dosya "complete" olduktan sonra bile bir an Chrome ya da antivirüs
     # tarafından kilitli olabiliyor (WinError 32); birkaç kez deniyoruz.
     for attempt in range(4):
@@ -411,6 +431,19 @@ def delete_files(msg):
     send({"type": "deleted", "ok": not failed, "done": done, "failed": failed})
 
 
+def _http_url(value):
+    """Yalnızca http(s) ve host'u olan adresler. `-` ile başlayan bir değer
+    yt-dlp'de seçenek (ör. --exec) olarak yorumlanırdı; `file://` de yerel
+    dosya okuturdu."""
+    if not isinstance(value, str):
+        return False
+    try:
+        u = urlparse(value)
+    except ValueError:
+        return False
+    return u.scheme in ("http", "https") and bool(u.netloc)
+
+
 PERCENT_RE = re.compile(r"\[download\]\s+([\d.]+)%")
 
 
@@ -430,6 +463,12 @@ def download(msg):
     global _current, _canceled
 
     _canceled = False
+    url = msg.get("url")
+    if not _http_url(url):
+        send({"type": "done", "ok": False, "code": -1,
+              "error": "Geçersiz adres (yalnızca http/https)."})
+        return
+
     ytdlp = find_ytdlp()
     if not ytdlp:
         send({"type": "done", "ok": False, "code": -1,
@@ -459,6 +498,8 @@ def download(msg):
     # Site sayfasından başlatılan normal indirmelerde bu alan boş geliyor,
     # yt-dlp kendi çıkarıcısı neyi gerekiyorsa onu yapıyor.
     referer = msg.get("referer") or ""
+    if not _http_url(referer):
+        referer = ""
     if referer:
         args += ["--referer", referer]
 
@@ -484,7 +525,8 @@ def download(msg):
 
     for i, cmd in enumerate(attempts):
         proc = subprocess.Popen(
-            cmd + [msg["url"]],
+            # "--": sonrası seçenek değil, yalnızca adres.
+            cmd + ["--", url],
             # stdin=DEVNULL ŞART: aksi hâlde yt-dlp host'un stdin'ini miras alır,
             # yani Chrome'un native messaging borusunu. Hem bloke olur hem de
             # protokol mesajlarımızı yiyebilir.

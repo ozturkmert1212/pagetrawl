@@ -303,11 +303,7 @@ async function deleteFiles(ids) {
 
   const staged = wanted.filter((x) => x.move);
   if (staged.length) {
-    // Köprüye izin verdiğimiz sınır: kayıt klasörü ve İndirilenler. Host bunun
-    // dışındaki hiçbir yola dokunmuyor.
-    const plan = await folderPlan();
-    const roots = [plan.abs, plan.root].filter(Boolean);
-    const res = await bridgeDelete(staged.map((h) => h.move), roots);
+    const res = await bridgeDelete(staged.map((h) => h.move), await bridgeRoots());
 
     if (!res) {
       for (const h of staged) failed.push({ id: h.id, code: 'nobridge' });
@@ -729,6 +725,15 @@ async function folderPlan() {
 }
 
 /**
+ * Köprüye izin verdiğimiz sınır: kayıt klasörü ve İndirilenler. Host silme ve
+ * taşımada bunun dışındaki hiçbir yola dokunmuyor.
+ */
+async function bridgeRoots() {
+  const plan = await folderPlan();
+  return [plan.abs, plan.root].filter(Boolean);
+}
+
+/**
  * yt-dlp'nin yazacağı MUTLAK klasör. Köprü dosyayı kendisi yazdığı için
  * "her şey İndirilenler altında" kuralına tabi değil. Ayar boşsa eski davranış
  * sürüyor: İndirilenler\yt-dlp. Yol öğrenilemezse boş dönüyoruz, host kendi
@@ -804,12 +809,14 @@ async function finishMove(id) {
   if (!item?.filename) return;
 
   const root = await getDownloadsRoot();
+  const roots = await bridgeRoots();
   movesInFlight++;
   syncKeepAlive();   // taşıma sürerken worker ölmesin
   const ok = nativeSend({
     action: 'move',
     from: item.filename,
     to,
+    roots,
     prune: root ? joinAbs(root, STAGE_DIR) : ''   // boşalan ara klasörü sil
   });
   if (!ok) {
@@ -826,6 +833,7 @@ async function finishMove(id) {
 // kırılırdı. Bunun yerine yerel yt-dlp'yi çağırıyoruz.
 
 const NATIVE_HOST = 'com.bozgu.ytdlp';
+const YTDLP_PASSTHROUGH = ['probe', 'cancel'];   // popup'ın host'a doğrudan iletebildikleri
 let nativePort = null;
 
 // MV3 service worker'ı ~30 sn boşta kalınca öldürüyor. yt-dlp bir YouTube
@@ -1419,7 +1427,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       pushStatus({ left: 0 });
     }
 
-    sendResponse({ ok: nativeSend({ action: msg.action, url: msg.url, mode: msg.mode }) });
+    // Buradan host'a yalnızca zararsız eylemler geçer. delete/move/download'ın
+    // kendi fonksiyonları var; popup'tan gelen ham bir mesaj onları tetiklemesin.
+    if (!YTDLP_PASSTHROUGH.includes(msg.action)) {
+      sendResponse({ ok: false });
+      return true;
+    }
+    sendResponse({ ok: nativeSend({ action: msg.action }) });
     return true;
   }
 

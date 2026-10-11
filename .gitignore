@@ -1,6 +1,7 @@
 # Yerel ajan ayarları (izinler ve makineye özel yollar içerebilir)
 .claude/
 .codex/
+AGENTS.md
 
 # Ortam sırları; yalnız örnek şablonlar depoya girebilir.
 .env
